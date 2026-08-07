@@ -35,8 +35,15 @@ async def lifespan(_: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.PROJECT_NAME,
-        openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
-        docs_url="/docs",
+        # The interactive docs describe every endpoint and every payload shape.
+        # That's a help while building and a map for anyone poking at a live
+        # deployment, so they stop at the edge of production.
+        openapi_url=(
+            None
+            if settings.ENVIRONMENT == "production"
+            else f"{settings.API_V1_PREFIX}/openapi.json"
+        ),
+        docs_url=None if settings.ENVIRONMENT == "production" else "/docs",
         redoc_url=None,
         lifespan=lifespan,
     )

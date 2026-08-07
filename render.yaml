@@ -1,0 +1,74 @@
+# Render blueprint for the API.
+#
+# Either point Render at this file (New → Blueprint) or copy these values into
+# the manual form — they are the same settings, and the ones that matter are
+# commented because none of them are obvious from the dashboard.
+#
+# Secrets are deliberately `sync: false`: Render prompts for them once and
+# stores them itself, so nothing sensitive is ever committed here.
+
+services:
+  - type: web
+    name: dnd-master-app-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # Frankfurt, not Oregon: the table is in Europe and every request pays the
+    # round trip. A service's region cannot be changed after it is created.
+    region: frankfurt
+    plan: starter
+    branch: main
+
+    # Reports the database too, so a red deploy says which half is broken
+    healthCheckPath: /health
+
+    # Runs after the build and before the new instance takes traffic, so the
+    # schema is never behind the code that expects it. This is also what
+    # installs the unaccent extension the list search depends on.
+    preDeployCommand: alembic upgrade head
+
+    # Uploaded and AI-generated images. Without this they live on the container
+    # filesystem and every deploy silently deletes them — including pictures
+    # that cost real money to draw.
+    disk:
+      name: uploads
+      mountPath: /var/data
+      sizeGB: 5
+
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+
+      # Absolute, because the disk is mounted outside the working directory
+      - key: UPLOAD_DIR
+        value: /var/data/uploads
+
+      # The refresh cookie is first-party: the frontend proxies /api to this
+      # service, so the browser only ever sees one origin. Lax is therefore
+      # enough, and Lax is what Safari doesn't quietly discard.
+      - key: COOKIE_SECURE
+        value: true
+      - key: COOKIE_SAMESITE
+        value: lax
+
+      # Neon connection string with the driver swapped to postgresql+asyncpg
+      # and any ?sslmode= dropped — asyncpg negotiates TLS itself.
+      - key: DATABASE_URL
+        sync: false
+      # python -m app.cli secret
+      - key: SECRET_KEY
+        sync: false
+      # Rotate the key before putting it here — the old one has been in a chat
+      - key: OPENAI_API_KEY
+        sync: false
+
+      # The static site's URL. Needed for CORS, because the cast display talks
+      # to this service directly rather than through the proxy.
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      # This service's own public URL, for the Google OAuth redirect
+      - key: BACKEND_URL
+        sync: false
