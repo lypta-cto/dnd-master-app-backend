@@ -1,6 +1,7 @@
 import re
 import unicodedata
 import uuid
+from typing import Any
 
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +11,35 @@ from app.models.entity import Entity, EntityLink, LinkRelation, Visibility
 # [[Name]] or [[Name|what to show]] — the second form lets prose read naturally
 # while still pointing at the canonical entity.
 WIKI_LINK = re.compile(r"\[\[([^\[\]|]{1,200}?)(?:\|[^\[\]]{0,200}?)?\]\]")
+
+
+DM_PREFIX = "dm_"
+
+
+def visible_data(data: dict[str, Any], is_dm: bool) -> dict[str, Any]:
+    """An entity's structured fields, minus the DM's half.
+
+    Same rule as the campaign's setup one level up: keys starting with `dm_`
+    are the notes behind the thing — what the party wrongly believes, what is
+    actually true — and they never leave the API for a player. Filtering here
+    rather than per view means a new endpoint can't leak them by forgetting.
+    """
+    if is_dm:
+        return data
+
+    return {key: value for key, value in data.items() if not key.startswith(DM_PREFIX)}
+
+
+def merge_dm_data(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    """Fold a player's edit into the DM's fields instead of over them.
+
+    A player is never sent `dm_` keys, so they can't send them back — and
+    `data` is replaced wholesale on write. Without this, a player ticking a box
+    on their own sheet would silently wipe the DM's notes about them.
+    """
+    kept = {key: value for key, value in existing.items() if key.startswith(DM_PREFIX)}
+    theirs = {key: value for key, value in incoming.items() if not key.startswith(DM_PREFIX)}
+    return {**theirs, **kept}
 
 
 def slugify(value: str) -> str:

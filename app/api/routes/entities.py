@@ -31,11 +31,18 @@ from app.services import players as player_service
 router = APIRouter(prefix="/campaigns/{campaign_id}", tags=["entities"])
 
 
-def _as_linked(rows) -> list[LinkedEntity]:
+def _summary(entity: Entity, is_dm: bool) -> EntitySummary:
+    """The only way an entity should reach a client — `dm_` fields filtered."""
+    return EntitySummary.model_validate(entity).model_copy(
+        update={"data": entity_service.visible_data(entity.data, is_dm)}
+    )
+
+
+def _as_linked(rows, is_dm: bool) -> list[LinkedEntity]:
     # `relation` lives on the link row, not the entity, so the summary is built
     # first and the relation attached — model_validate alone would miss it.
     return [
-        LinkedEntity(**EntitySummary.model_validate(entity).model_dump(), relation=relation)
+        LinkedEntity(**_summary(entity, is_dm).model_dump(), relation=relation)
         for entity, relation in rows
     ]
 
@@ -66,9 +73,11 @@ async def _detail(
         ]
 
     return EntityDetail(
-        **EntityRead.model_validate(entity).model_dump(),
-        links=_as_linked(links),
-        backlinks=_as_linked(backs),
+        **EntityRead.model_validate(entity)
+        .model_copy(update={"data": entity_service.visible_data(entity.data, context.is_dm)})
+        .model_dump(),
+        links=_as_linked(links, context.is_dm),
+        backlinks=_as_linked(backs, context.is_dm),
         unresolved_links=unresolved,
     )
 
@@ -133,7 +142,7 @@ async def search_entities(
         session, context.campaign.id, q, is_dm=context.is_dm, user_id=context.user.id, limit=limit
     )
     return [
-        SearchHit(**EntitySummary.model_validate(entity).model_dump(), rank=rank)
+        SearchHit(**_summary(entity, context.is_dm).model_dump(), rank=rank)
         for entity, rank in hits
     ]
 
@@ -167,7 +176,7 @@ async def list_entities(
     )
 
     return EntityPage(
-        items=[EntitySummary.model_validate(entity) for entity in result.scalars()],
+        items=[_summary(entity, context.is_dm) for entity in result.scalars()],
         total=total,
         page=page,
         page_size=page_size,
@@ -251,6 +260,11 @@ async def update_entity(
         changes.pop("visibility", None)
         changes.pop("player_id", None)
 
+        # They were never sent the DM's fields, so their `data` can't carry them
+        # back — fold the edit in rather than letting it wipe them
+        if "data" in changes:
+            changes["data"] = entity_service.merge_dm_data(entity.data, changes["data"])
+
     if changes.get("player_id") is not None:
         await _require_seat(session, context, changes["player_id"])
 
@@ -330,7 +344,9 @@ async def create_link(
         session.add(EntityLink(from_id=entity.id, to_id=target.id, relation=payload.relation))
         await session.flush()
 
-    return EntityRead.model_validate(entity)
+    return EntityRead.model_validate(entity).model_copy(
+        update={"data": entity_service.visible_data(entity.data, context.is_dm)}
+    )
 
 
 @router.delete("/entities/{entity_id}/links/{to_id}", response_model=MessageResponse)
@@ -466,7 +482,9 @@ async def set_cover_image(
     entity.image_url = image.url
     await session.flush()
     await session.refresh(entity)
-    return EntityRead.model_validate(entity)
+    return EntityRead.model_validate(entity).model_copy(
+        update={"data": entity_service.visible_data(entity.data, context.is_dm)}
+    )
 
 
 @router.delete("/entities/{entity_id}/images/{image_id}", response_model=MessageResponse)

@@ -221,3 +221,122 @@ async def test_renaming_to_an_already_referenced_name_reconnects_prose(client: A
     )
     assert [link["name"] for link in detail.json()["links"]] == ["The Amber Temple"]
     assert detail.json()["unresolved_links"] == []
+
+
+async def test_dm_fields_on_an_entity_never_reach_a_player(client: AsyncClient):
+    """`dm_` keys are the notes behind the thing — same rule as the campaign."""
+    dm = await sign_up(client, "dmfields-dm@example.com")
+    player = await sign_up(client, "dmfields-player@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    await client.post(
+        f"{PREFIX}/campaigns/{cid}/members",
+        json={"email": "dmfields-player@example.com", "role": "player"},
+        headers=dm,
+    )
+
+    npc = await client.post(
+        f"{PREFIX}/campaigns/{cid}/entities",
+        json={
+            "type": "npc",
+            "name": "Father Aldric",
+            "visibility": "shared",
+            "data": {
+                "occupation": "Priest",
+                "dm_players_think": "He is protecting the village.",
+                "dm_notes": "He leads the cult feeding the artefact.",
+            },
+        },
+        headers=dm,
+    )
+    eid = npc.json()["id"]
+    assert npc.json()["data"]["dm_notes"].startswith("He leads")
+
+    seen = (await client.get(f"{PREFIX}/campaigns/{cid}/entities/{eid}", headers=player)).json()
+    assert seen["data"] == {"occupation": "Priest"}
+
+    listed = (await client.get(f"{PREFIX}/campaigns/{cid}/entities", headers=player)).json()
+    assert all("dm_notes" not in item["data"] for item in listed["items"])
+
+    found = (await client.get(f"{PREFIX}/campaigns/{cid}/search?q=Aldric", headers=player)).json()
+    assert all("dm_notes" not in hit["data"] for hit in found)
+
+
+async def test_a_player_editing_their_sheet_keeps_the_dms_notes(client: AsyncClient):
+    """`data` is replaced wholesale, and they never received the DM's half."""
+    dm = await sign_up(client, "keepnotes-dm@example.com")
+    player = await sign_up(client, "keepnotes-player@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    await client.post(
+        f"{PREFIX}/campaigns/{cid}/members",
+        json={"email": "keepnotes-player@example.com", "role": "player"},
+        headers=dm,
+    )
+    seat = (
+        await client.post(
+            f"{PREFIX}/campaigns/{cid}/players", json={"name": "Ana"}, headers=dm
+        )
+    ).json()
+    await client.post(
+        f"{PREFIX}/campaigns/{cid}/players/{seat['id']}/invite",
+        json={"email": "keepnotes-player@example.com"},
+        headers=dm,
+    )
+
+    character = (
+        await client.post(
+            f"{PREFIX}/campaigns/{cid}/entities",
+            json={
+                "type": "character",
+                "name": "Arannis",
+                "player_id": seat["id"],
+                "visibility": "shared",
+                "data": {"current_hp": 27, "dm_notes": "Their brother is the villain."},
+            },
+            headers=dm,
+        )
+    ).json()
+
+    # The player saves what they were given: their half, without the DM's
+    await client.patch(
+        f"{PREFIX}/campaigns/{cid}/entities/{character['id']}",
+        json={"data": {"current_hp": 12}},
+        headers=player,
+    )
+
+    after = (
+        await client.get(f"{PREFIX}/campaigns/{cid}/entities/{character['id']}", headers=dm)
+    ).json()
+    assert after["data"] == {"current_hp": 12, "dm_notes": "Their brother is the villain."}
+
+
+async def test_a_player_cannot_write_dm_fields(client: AsyncClient):
+    dm = await sign_up(client, "nowrite-dm@example.com")
+    player = await sign_up(client, "nowrite-player@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    await client.post(
+        f"{PREFIX}/campaigns/{cid}/members",
+        json={"email": "nowrite-player@example.com", "role": "player"},
+        headers=dm,
+    )
+
+    character = (
+        await client.post(
+            f"{PREFIX}/campaigns/{cid}/entities",
+            json={"type": "character", "name": "Theirs"},
+            headers=player,
+        )
+    ).json()
+
+    await client.patch(
+        f"{PREFIX}/campaigns/{cid}/entities/{character['id']}",
+        json={"data": {"level": 2, "dm_notes": "I write the secrets now"}},
+        headers=player,
+    )
+
+    after = (
+        await client.get(f"{PREFIX}/campaigns/{cid}/entities/{character['id']}", headers=dm)
+    ).json()
+    assert after["data"] == {"level": 2}

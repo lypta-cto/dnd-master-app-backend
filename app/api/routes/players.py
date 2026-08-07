@@ -8,19 +8,35 @@ from app.api.deps import SessionDep
 from app.models.entity import Entity
 from app.models.player import Player
 from app.schemas.auth import MessageResponse
-from app.schemas.player import PlayerCreate, PlayerInvite, PlayerRead, PlayerUpdate
+from app.schemas.player import (
+    PlayerCharacter,
+    PlayerCreate,
+    PlayerInvite,
+    PlayerRead,
+    PlayerUpdate,
+)
 from app.schemas.user import UserRead
 from app.services import auth as auth_service
+from app.services import entities as entity_service
 from app.services import players as player_service
 
 router = APIRouter(prefix="/campaigns/{campaign_id}/players", tags=["players"])
 
 
-def _read(player: Player) -> PlayerRead:
+def _read(player: Player, is_dm: bool) -> PlayerRead:
     """The seat plus whatever account it has, which is usually none."""
     return PlayerRead.model_validate(player).model_copy(
         update={
             "account": UserRead.model_validate(player.user) if player.user else None,
+            # The roster carries sheets, and sheets carry the DM's notes
+            "characters": [
+                PlayerCharacter(
+                    id=character.id,
+                    name=character.name,
+                    data=entity_service.visible_data(character.data, is_dm),
+                )
+                for character in player.characters
+            ],
         }
     )
 
@@ -40,7 +56,7 @@ async def list_players(context: CampaignCtx, session: SessionDep) -> list[Player
     result = await session.execute(
         select(Player).where(Player.campaign_id == context.campaign.id).order_by(Player.name)
     )
-    return [_read(player) for player in result.scalars()]
+    return [_read(player, context.is_dm) for player in result.scalars()]
 
 
 @router.post("", response_model=PlayerRead, status_code=status.HTTP_201_CREATED)
@@ -49,7 +65,7 @@ async def create_player(payload: PlayerCreate, context: DmCtx, session: SessionD
     session.add(player)
     await session.flush()
     await session.refresh(player)
-    return _read(player)
+    return _read(player, context.is_dm)
 
 
 @router.patch("/{player_id}", response_model=PlayerRead)
@@ -67,7 +83,7 @@ async def update_player(
 
     await session.flush()
     await session.refresh(player)
-    return _read(player)
+    return _read(player, context.is_dm)
 
 
 @router.delete("/{player_id}", response_model=MessageResponse)
@@ -128,4 +144,4 @@ async def invite_player(
 
     await session.flush()
     await session.refresh(player)
-    return _read(player)
+    return _read(player, context.is_dm)
