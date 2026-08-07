@@ -26,6 +26,13 @@ class CastUpdate(BaseModel):
             if not self.payload.get(field):
                 raise ValueError(f"mode '{self.mode.value}' requires payload.{field}")
 
+        if self.mode is CastMode.DICE:
+            if not isinstance(self.payload.get("total"), int):
+                raise ValueError("mode 'dice' requires an integer payload.total")
+            rolls = self.payload.get("rolls")
+            if not isinstance(rolls, list) or not all(isinstance(r, int) for r in rolls):
+                raise ValueError("mode 'dice' requires payload.rolls as a list of integers")
+
         if self.mode is CastMode.SLIDESHOW:
             images = self.payload.get("images")
             if not isinstance(images, list) or not images:

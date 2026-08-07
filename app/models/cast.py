@@ -15,6 +15,7 @@ class CastMode(enum.StrEnum):
     SLIDESHOW = "slideshow"
     TEXT = "text"
     INITIATIVE = "initiative"  # MVP-3
+    DICE = "dice"  # a roll result, for drama
     MAP = "map"  # MVP-4
 
 

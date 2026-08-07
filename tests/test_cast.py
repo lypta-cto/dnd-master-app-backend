@@ -190,3 +190,27 @@ async def test_slideshow_requires_images(client: AsyncClient):
     assert ok.status_code == 200
     assert ok.json()["mode"] == "slideshow"
     assert len(ok.json()["payload"]["images"]) == 2
+
+
+async def test_dice_cast_carries_a_valid_roll(client: AsyncClient):
+    dm = await sign_up(client, "cast11@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    bad = await client.put(
+        f"{PREFIX}/campaigns/{cid}/cast",
+        json={"mode": "dice", "payload": {"formula": "2d6"}},
+        headers=dm,
+    )
+    assert bad.status_code == 422
+
+    ok = await client.put(
+        f"{PREFIX}/campaigns/{cid}/cast",
+        json={
+            "mode": "dice",
+            "payload": {"formula": "2d6+3", "rolls": [4, 2], "modifier": 3, "total": 9,
+                        "label": "Goblin attack"},
+        },
+        headers=dm,
+    )
+    assert ok.status_code == 200
+    assert ok.json()["payload"]["total"] == 9
