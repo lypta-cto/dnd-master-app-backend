@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import Field, PostgresDsn, field_validator
@@ -86,6 +87,23 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "uploads"
     UPLOAD_URL_PREFIX: str = "/uploads"
     MAX_AVATAR_BYTES: int = 5 * 1024 * 1024
+    MAX_ENTITY_IMAGE_BYTES: int = 12 * 1024 * 1024
+    MAX_ENTITY_IMAGE_DIMENSION: int = 1600
+
+    @property
+    def UPLOAD_DIR_PATH(self) -> Path:
+        return Path(self.UPLOAD_DIR)
+
+    # --- AI drafting ---------------------------------------------------------
+    # Optional: with no key the feature is simply off, and the API says so
+    # rather than failing at the point of use. One provider for both halves —
+    # drafting a paragraph and drawing one picture are small jobs, so the
+    # cheap models are the right size.
+    OPENAI_API_KEY: str | None = None
+    AI_TEXT_MODEL: str = "gpt-4o-mini"
+    IMAGE_MODEL: str = "gpt-image-1"
+    IMAGE_SIZE: str = "1024x1024"
+    IMAGE_QUALITY: str = "low"
 
     # --- First user ----------------------------------------------------------
     # Seeded by `python -m app.cli seed` so you can sign in immediately

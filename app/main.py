@@ -10,6 +10,7 @@ from sqlalchemy.exc import OperationalError
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.api.routes import (
+    ai,
     auth,
     campaigns,
     cast,
@@ -69,6 +70,7 @@ def create_app() -> FastAPI:
     app.include_router(cast.router, prefix=settings.API_V1_PREFIX)
     app.include_router(combat.router, prefix=settings.API_V1_PREFIX)
     app.include_router(run.router, prefix=settings.API_V1_PREFIX)
+    app.include_router(ai.router, prefix=settings.API_V1_PREFIX)
 
     # Uploaded avatars. Behind a CDN or object store in production — see
     # app/services/media.py.

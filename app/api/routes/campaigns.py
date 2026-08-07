@@ -19,6 +19,7 @@ from app.schemas.campaign import (
 )
 from app.schemas.user import UserRead
 from app.services import auth as auth_service
+from app.services import starter as starter_service
 from app.services.entities import slugify
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
@@ -149,6 +150,16 @@ async def delete_campaign(context: DmCtx, session: SessionDep) -> MessageRespons
 
     await session.delete(context.campaign)
     return MessageResponse(message="Campaign deleted")
+
+
+@router.post("/{campaign_id}/starter-pack", response_model=MessageResponse)
+async def install_starter_pack(context: DmCtx, session: SessionDep) -> MessageResponse:
+    """Stock an empty campaign with something to throw and somewhere to throw it.
+
+    Safe to run twice — anything the DM already named is left alone.
+    """
+    created = await starter_service.install(session, context.campaign)
+    return MessageResponse(message=f"Added {created} entries")
 
 
 @router.post("/{campaign_id}/display-token", response_model=CampaignDetail)
