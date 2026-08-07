@@ -110,8 +110,21 @@ def create_app() -> FastAPI:
 
     @app.get("/health", tags=["meta"])
     async def health() -> JSONResponse:
-        """Reports the database too, so `curl /health` answers the first
-        question you'd ask when something 503s."""
+        """Is this process alive — not, is everything it depends on awake.
+
+        The distinction cost us a production outage. A host restarts a service
+        whose health check fails, and a serverless database suspends itself
+        when idle, so answering 503 because the database was asleep made the
+        two of them into a loop: database naps, check fails, host kills the
+        process, and it all begins again on the next nap. Requests failed
+        about a third of the time, every restart dropped the cast channel's
+        subscribers, and a wizard that died mid-way got retried into duplicate
+        rows.
+
+        The database is still reported, because that is the first thing you
+        want to know when something is wrong — it just isn't grounds for
+        declaring this process unfit to serve. It will wake on the next query.
+        """
         database = "ok"
 
         try:
@@ -121,9 +134,7 @@ def create_app() -> FastAPI:
             database = "unavailable"
 
         return JSONResponse(
-            status_code=status.HTTP_200_OK
-            if database == "ok"
-            else status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=status.HTTP_200_OK,
             content={
                 "status": "ok" if database == "ok" else "degraded",
                 "database": database,
