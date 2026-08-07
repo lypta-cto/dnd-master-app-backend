@@ -24,6 +24,19 @@ from app.services.entities import slugify
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
 
+def visible_data(campaign: Campaign, is_dm: bool) -> dict:
+    """The setup, minus everything the party isn't supposed to know.
+
+    `dm_` keys — the truth behind the premise, the villain, the twist — are
+    dropped here rather than anywhere in the client, so no view can leak them by
+    forgetting to filter. It's the same rule as entity visibility, one level up.
+    """
+    if is_dm:
+        return campaign.data
+
+    return {key: value for key, value in campaign.data.items() if not key.startswith("dm_")}
+
+
 async def _unique_campaign_slug(session: SessionDep, name: str) -> str:
     base = slugify(name)
     candidate, suffix = base, 2
@@ -56,16 +69,20 @@ async def list_campaigns(session: SessionDep, user: CurrentUser) -> list[Campaig
         ).scalars()
     }
 
-    return [
-        CampaignRead.model_validate(campaign).model_copy(
-            update={
-                "my_role": CampaignRole.DM
-                if campaign.owner_id == user.id
-                else roles.get(campaign.id)
-            }
+    listed = []
+
+    for campaign in campaigns:
+        role = CampaignRole.DM if campaign.owner_id == user.id else roles.get(campaign.id)
+        listed.append(
+            CampaignRead.model_validate(campaign).model_copy(
+                update={
+                    "my_role": role,
+                    "data": visible_data(campaign, role is CampaignRole.DM),
+                }
+            )
         )
-        for campaign in campaigns
-    ]
+
+    return listed
 
 
 @router.post("", response_model=CampaignDetail, status_code=status.HTTP_201_CREATED)
@@ -76,6 +93,7 @@ async def create_campaign(
         name=payload.name,
         slug=await _unique_campaign_slug(session, payload.name),
         summary=payload.summary,
+        data=payload.data,
         owner_id=user.id,
         display_token=new_display_token(),
     )
@@ -101,6 +119,7 @@ async def read_campaign(context: CampaignCtx, session: SessionDep) -> CampaignDe
         update={
             "my_role": context.role,
             "entity_count": count or 0,
+            "data": visible_data(context.campaign, context.is_dm),
             # The display token is a credential — DMs only
             "display_token": context.campaign.display_token if context.is_dm else None,
         }

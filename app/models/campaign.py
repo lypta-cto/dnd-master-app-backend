@@ -1,9 +1,10 @@
 import enum
 import secrets
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Enum, ForeignKey, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -33,6 +34,14 @@ class Campaign(UUIDMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     slug: Mapped[str] = mapped_column(String(180), unique=True, index=True, nullable=False)
     summary: Mapped[str | None] = mapped_column(String(500))
+
+    # What kind of game this is, and what's actually going on in it. Free-form
+    # for the same reason `Entity.data` is: the shape of a campaign's setup is
+    # still moving, and none of it is worth a migration each time.
+    #
+    # Keys starting with `dm_` never reach a player — the API strips them — so
+    # the truth and the twist can live next to the premise the party is told.
+    data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
     owner_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False

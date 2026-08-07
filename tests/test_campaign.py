@@ -226,3 +226,54 @@ async def test_players_cannot_write(client: AsyncClient):
         headers=player,
     )
     assert response.status_code == 403
+
+
+async def test_the_truth_behind_the_premise_stays_with_the_dm(client: AsyncClient):
+    """`dm_` keys are the campaign's secrets — the API drops them for players."""
+    dm = await sign_up(client, "setup-dm@example.com")
+    player = await sign_up(client, "setup-player@example.com")
+
+    campaign = await client.post(
+        f"{PREFIX}/campaigns",
+        json={
+            "name": "Ravenford",
+            "data": {
+                "campaign_type": "one_shot",
+                "premise": "People vanish from the village every night.",
+                "player_intro": "The road ends at a shuttered inn.",
+                "dm_truth": "The monster is trying to stop the ritual.",
+                "dm_twist": "The priest leads the cult.",
+            },
+        },
+        headers=dm,
+    )
+    cid = campaign.json()["id"]
+    assert campaign.json()["data"]["dm_truth"].startswith("The monster")
+
+    await client.post(
+        f"{PREFIX}/campaigns/{cid}/members",
+        json={"email": "setup-player@example.com", "role": "player"},
+        headers=dm,
+    )
+
+    seen = (await client.get(f"{PREFIX}/campaigns/{cid}", headers=player)).json()["data"]
+    assert seen["premise"].startswith("People vanish")
+    assert "dm_truth" not in seen
+    assert "dm_twist" not in seen
+
+    # …and not through the list either
+    listed = (await client.get(f"{PREFIX}/campaigns", headers=player)).json()
+    assert all("dm_truth" not in c["data"] for c in listed)
+
+
+async def test_campaign_setup_survives_an_edit(client: AsyncClient):
+    dm = await sign_up(client, "setup-edit@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    updated = await client.patch(
+        f"{PREFIX}/campaigns/{cid}",
+        json={"data": {"tone": "dark", "system": "D&D 5e"}},
+        headers=dm,
+    )
+    assert updated.status_code == 200
+    assert updated.json()["data"] == {"tone": "dark", "system": "D&D 5e"}
