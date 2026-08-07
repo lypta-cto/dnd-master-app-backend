@@ -2,7 +2,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from app.api.campaign_deps import CampaignCtx, DmCtx
 from app.api.deps import SessionDep
@@ -23,6 +23,7 @@ from app.schemas.entity import (
     LinkCreate,
     LinkedEntity,
     SearchHit,
+    SortOrder,
 )
 from app.services import entities as entity_service
 from app.services import media as media_service
@@ -153,6 +154,8 @@ async def list_entities(
     session: SessionDep,
     type: EntityType | None = None,
     tag: str | None = None,
+    q: str | None = Query(default=None, max_length=200),
+    sort: SortOrder = SortOrder.NAME,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
 ) -> EntityPage:
@@ -162,15 +165,43 @@ async def list_entities(
         filters.append(Entity.type == type)
     if tag:
         filters.append(Entity.tags.any(tag))
+    if (needle := (q or "").strip()):
+        # Filtering, not ranked search — /search already does that across the
+        # campaign. Here the DM is looking down one list for a name they half
+        # remember, so a plain contains over name and summary is what fits, and
+        # it runs over the whole list rather than the page they can see.
+        # Folded on both sides: a DM hunting "Kovač" in a list of two hundred
+        # types "kovac", and a search that answers "no matches" to a name
+        # plainly on the page reads as broken.
+        pattern = func.unaccent(f"%{needle}%")
+        filters.append(
+            or_(
+                func.unaccent(Entity.name).ilike(pattern),
+                func.unaccent(Entity.summary).ilike(pattern),
+            )
+        )
     if (visible := entity_service.visibility_filter(context.is_dm, context.user.id)) is not None:
         filters.append(visible)
 
     total = await session.scalar(select(func.count()).select_from(Entity).where(*filters)) or 0
 
+    # Name is the default because it's the only order you can predict; the
+    # others are for "what was I working on" and "what did I just add".
+    order = {
+        SortOrder.NAME: Entity.name.asc(),
+        SortOrder.UPDATED: Entity.updated_at.desc(),
+        SortOrder.CREATED: Entity.created_at.desc(),
+    }[sort]
+
     result = await session.execute(
         select(Entity)
         .where(*filters)
-        .order_by(Entity.name)
+        # Ties need a tie-break or pagination lies. `now()` in Postgres is the
+        # transaction's start time, so everything written by one request — the
+        # sixteen entries of the starter pack, say — shares a timestamp to the
+        # microsecond. Without a total order the database may answer the same
+        # query differently each time, and a row shows up on two pages or none.
+        .order_by(order, Entity.name.asc(), Entity.id.asc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )

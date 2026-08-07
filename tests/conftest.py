@@ -19,6 +19,7 @@ os.environ.setdefault("ENVIRONMENT", "local")
 
 import asyncpg  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
+from sqlalchemy import text  # noqa: E402
 from sqlalchemy.ext.asyncio import (  # noqa: E402
     AsyncSession,
     async_sessionmaker,
@@ -62,6 +63,11 @@ async def engine():
     engine = create_async_engine(_url_for(TEST_DB_NAME), poolclass=NullPool)
 
     async with engine.begin() as connection:
+        # The schema comes from the metadata, but extensions don't — they live
+        # in migrations, which this database never runs. Anything a query calls
+        # has to be installed here too, or the suite passes on a database the
+        # application would fail against.
+        await connection.execute(text("CREATE EXTENSION IF NOT EXISTS unaccent"))
         await connection.run_sync(Base.metadata.drop_all)
         await connection.run_sync(Base.metadata.create_all)
 

@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -76,6 +77,14 @@ class EntityDetail(EntityRead):
     # Names in [[…]] that don't match anything yet, so the UI can offer to
     # create them instead of silently dropping the reference
     unresolved_links: list[str] = Field(default_factory=list)
+
+
+class SortOrder(StrEnum):
+    """How a list is ordered. A closed set so a typo can't silently sort by name."""
+
+    NAME = "name"
+    UPDATED = "updated"
+    CREATED = "created"
 
 
 class EntityPage(BaseModel):

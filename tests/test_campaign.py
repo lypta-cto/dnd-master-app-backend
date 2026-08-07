@@ -328,3 +328,91 @@ async def test_a_scene_leads_to_another_and_survives_an_edit(client: AsyncClient
         await client.get(f"{PREFIX}/campaigns/{cid}/entities/{mill['id']}", headers=dm)
     ).json()
     assert [link["name"] for link in back["backlinks"]] == ["Arrival at Ravenford"]
+
+
+# --- Finding things in a long list -------------------------------------------
+
+
+async def test_listing_filters_by_name_or_summary_across_the_whole_list(client: AsyncClient):
+    """A campaign with a hundred NPCs is the normal case, not the edge one."""
+    dm = await sign_up(client, "list-search@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    await make_entity(client, dm, cid, name="Ireena Kolyana", summary="Burgomaster's ward")
+    await make_entity(client, dm, cid, name="Rictavio", summary="A travelling carnival master")
+    await make_entity(client, dm, cid, name="Rudolph van Richten", summary="Monster hunter")
+
+    by_name = await client.get(f"{PREFIX}/campaigns/{cid}/entities?q=ric", headers=dm)
+    assert {item["name"] for item in by_name.json()["items"]} == {"Rictavio", "Rudolph van Richten"}
+
+    # The summary is searched too — you remember what someone does, not their name
+    by_summary = await client.get(f"{PREFIX}/campaigns/{cid}/entities?q=carnival", headers=dm)
+    assert [item["name"] for item in by_summary.json()["items"]] == ["Rictavio"]
+
+    # The count has to describe the filtered list, or pagination lies
+    assert by_summary.json()["total"] == 1
+
+
+async def test_search_ignores_diacritics_in_both_directions(client: AsyncClient):
+    """Nobody types "Kovač" with the caron while hunting through a long list."""
+    dm = await sign_up(client, "list-diacritics@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    await make_entity(client, dm, cid, name="Miloš Kovač", summary="Seoski kovač")
+    await make_entity(client, dm, cid, name="Đorđe Ristić", summary="Grobar")
+
+    plain = await client.get(f"{PREFIX}/campaigns/{cid}/entities?q=kovac", headers=dm)
+    assert [item["name"] for item in plain.json()["items"]] == ["Miloš Kovač"]
+
+    # And typing them properly still works — the folding is on both sides
+    proper = await client.get(f"{PREFIX}/campaigns/{cid}/entities?q=Đorđe", headers=dm)
+    assert [item["name"] for item in proper.json()["items"]] == ["Đorđe Ristić"]
+
+    ascii_only = await client.get(f"{PREFIX}/campaigns/{cid}/entities?q=dorde", headers=dm)
+    assert [item["name"] for item in ascii_only.json()["items"]] == ["Đorđe Ristić"]
+
+
+async def test_search_and_sort_survive_pagination(client: AsyncClient):
+    dm = await sign_up(client, "list-sort@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    for name in ("Zuleika", "Anna", "Milena"):
+        await make_entity(client, dm, cid, name=name)
+
+    by_name = await client.get(f"{PREFIX}/campaigns/{cid}/entities?sort=name", headers=dm)
+    assert [item["name"] for item in by_name.json()["items"]] == ["Anna", "Milena", "Zuleika"]
+
+    # Every order is total, ties included. `now()` is the transaction's start
+    # time, so a single request writing several rows stamps them identically —
+    # and an ordering that isn't total lets the same query answer differently
+    # each time, which paginates a row onto two pages or off the end entirely.
+    newest = await client.get(f"{PREFIX}/campaigns/{cid}/entities?sort=created", headers=dm)
+    again = await client.get(f"{PREFIX}/campaigns/{cid}/entities?sort=created", headers=dm)
+    names = [item["name"] for item in newest.json()["items"]]
+    assert names == [item["name"] for item in again.json()["items"]]
+    assert names == ["Anna", "Milena", "Zuleika"]  # tied on time, so by name
+
+    # A filtered second page is still the filtered list, not the whole one
+    page_two = await client.get(
+        f"{PREFIX}/campaigns/{cid}/entities?q=a&sort=name&page=2&page_size=1", headers=dm
+    )
+    assert [item["name"] for item in page_two.json()["items"]] == ["Milena"]
+    assert page_two.json()["total"] == 3
+
+
+async def test_a_player_cannot_search_their_way_into_dm_only_entries(client: AsyncClient):
+    """Filtering runs after the visibility rule, never around it."""
+    dm = await sign_up(client, "list-secret-dm@example.com")
+    player = await sign_up(client, "list-secret-player@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    await client.post(
+        f"{PREFIX}/campaigns/{cid}/members",
+        json={"email": "list-secret-player@example.com", "role": "player"},
+        headers=dm,
+    )
+    await make_entity(client, dm, cid, name="Strahd's true name", visibility="dm_only")
+
+    found = await client.get(f"{PREFIX}/campaigns/{cid}/entities?q=strahd", headers=player)
+    assert found.json()["items"] == []
+    assert found.json()["total"] == 0
