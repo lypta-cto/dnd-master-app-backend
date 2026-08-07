@@ -117,3 +117,61 @@ async def test_players_cannot_upload_images(client: AsyncClient):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 403
+
+
+
+async def test_player_manages_their_own_character_gallery(client: AsyncClient):
+    """A portrait belongs to whoever the sheet belongs to."""
+    dm = await sign_up(client, "gal-owner-dm@example.com")
+    player = await sign_up(client, "gal-owner-player@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    await client.post(
+        f"{PREFIX}/campaigns/{cid}/members",
+        json={"email": "gal-owner-player@example.com", "role": "player"},
+        headers=dm,
+    )
+
+    created = await client.post(
+        f"{PREFIX}/campaigns/{cid}/entities",
+        json={"type": "character", "name": "Ireena"},
+        headers=player,
+    )
+    eid = created.json()["id"]
+
+    image = await upload(client, player, cid, eid, "green", caption="Before Barovia")
+
+    captioned = await client.patch(
+        f"{PREFIX}/campaigns/{cid}/entities/{eid}/images/{image['id']}",
+        json={"caption": "After Barovia"},
+        headers=player,
+    )
+    assert captioned.status_code == 200
+    assert captioned.json()["caption"] == "After Barovia"
+
+    removed = await client.delete(
+        f"{PREFIX}/campaigns/{cid}/entities/{eid}/images/{image['id']}", headers=player
+    )
+    assert removed.status_code == 200
+
+
+async def test_player_cannot_touch_someone_elses_gallery(client: AsyncClient):
+    """The image routes obey the same rule as the entity itself."""
+    dm = await sign_up(client, "gal-guard-dm@example.com")
+    player = await sign_up(client, "gal-guard-player@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    await client.post(
+        f"{PREFIX}/campaigns/{cid}/members",
+        json={"email": "gal-guard-player@example.com", "role": "player"},
+        headers=dm,
+    )
+
+    npc = await make_entity(client, dm, cid, name="Gallery Guard", visibility="shared")
+
+    blocked = await client.post(
+        f"{PREFIX}/campaigns/{cid}/entities/{npc['id']}/images",
+        files={"file": ("art.png", png_bytes("red"), "image/png")},
+        headers=player,
+    )
+    assert blocked.status_code == 403

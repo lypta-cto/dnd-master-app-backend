@@ -96,6 +96,21 @@ def _can_write(context: CampaignCtx, entity: Entity) -> bool:
     )
 
 
+async def _load_writable(
+    session: SessionDep, context: CampaignCtx, entity_id: uuid.UUID
+) -> Entity:
+    """Load an entity the caller is allowed to change, or refuse."""
+    entity = await _load(session, context, entity_id)
+
+    if not _can_write(context, entity):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the DM can change this",
+        )
+
+    return entity
+
+
 @router.get("/search", response_model=list[SearchHit])
 async def search_entities(
     context: CampaignCtx,
@@ -356,12 +371,12 @@ async def list_entity_images(
 )
 async def add_entity_image(
     entity_id: uuid.UUID,
-    context: DmCtx,
+    context: CampaignCtx,
     session: SessionDep,
     file: Annotated[UploadFile, File()],
     caption: Annotated[str | None, Form()] = None,
 ) -> EntityImageRead:
-    entity = await _load(session, context, entity_id)
+    entity = await _load_writable(session, context, entity_id)
 
     url = await media_service.store_entity_image(file, entity.id)
 
@@ -390,10 +405,10 @@ async def update_entity_image(
     entity_id: uuid.UUID,
     image_id: uuid.UUID,
     payload: EntityImageUpdate,
-    context: DmCtx,
+    context: CampaignCtx,
     session: SessionDep,
 ) -> EntityImageRead:
-    await _load(session, context, entity_id)
+    await _load_writable(session, context, entity_id)
     image = await session.get(EntityImage, image_id)
 
     if image is None or image.entity_id != entity_id:
@@ -409,9 +424,9 @@ async def update_entity_image(
 
 @router.post("/entities/{entity_id}/images/{image_id}/cover", response_model=EntityRead)
 async def set_cover_image(
-    entity_id: uuid.UUID, image_id: uuid.UUID, context: DmCtx, session: SessionDep
+    entity_id: uuid.UUID, image_id: uuid.UUID, context: CampaignCtx, session: SessionDep
 ) -> EntityRead:
-    entity = await _load(session, context, entity_id)
+    entity = await _load_writable(session, context, entity_id)
     image = await session.get(EntityImage, image_id)
 
     if image is None or image.entity_id != entity.id:
@@ -425,9 +440,9 @@ async def set_cover_image(
 
 @router.delete("/entities/{entity_id}/images/{image_id}", response_model=MessageResponse)
 async def delete_entity_image_row(
-    entity_id: uuid.UUID, image_id: uuid.UUID, context: DmCtx, session: SessionDep
+    entity_id: uuid.UUID, image_id: uuid.UUID, context: CampaignCtx, session: SessionDep
 ) -> MessageResponse:
-    entity = await _load(session, context, entity_id)
+    entity = await _load_writable(session, context, entity_id)
     image = await session.get(EntityImage, image_id)
 
     if image is None or image.entity_id != entity.id:
