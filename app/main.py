@@ -17,6 +17,7 @@ from app.api.routes import (
     entities,
     oauth,
     players,
+    run,
     users,
     workspace,
 )
@@ -67,6 +68,7 @@ def create_app() -> FastAPI:
     app.include_router(entities.router, prefix=settings.API_V1_PREFIX)
     app.include_router(cast.router, prefix=settings.API_V1_PREFIX)
     app.include_router(combat.router, prefix=settings.API_V1_PREFIX)
+    app.include_router(run.router, prefix=settings.API_V1_PREFIX)
 
     # Uploaded avatars. Behind a CDN or object store in production — see
     # app/services/media.py.

@@ -8,6 +8,7 @@ from app.models.entity import Entity, EntityLink, EntityType, LinkRelation, Visi
 from app.models.entity_image import EntityImage
 from app.models.player import Player
 from app.models.refresh_token import RefreshToken
+from app.models.run import RunState
 from app.models.user import Role, User
 from app.models.workspace import Workspace
 
@@ -22,6 +23,7 @@ __all__ = [
     "Entity",
     "EntityImage",
     "Player",
+    "RunState",
     "EntityLink",
     "EntityType",
     "LinkRelation",
