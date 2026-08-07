@@ -35,6 +35,7 @@ class EntityType(enum.StrEnum):
     SESSION = "session"  # one evening at the table: prep before, recap after
     QUEST = "quest"  # a story thread with a status — the campaign's spine
     MONSTER = "monster"  # statblock in `data`, always DM-only by default
+    MAP = "map"  # an image with pins; each pin points at an entity
 
 
 class Visibility(enum.StrEnum):
