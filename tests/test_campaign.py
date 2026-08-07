@@ -277,3 +277,54 @@ async def test_campaign_setup_survives_an_edit(client: AsyncClient):
     )
     assert updated.status_code == 200
     assert updated.json()["data"] == {"tone": "dark", "system": "D&D 5e"}
+
+
+async def test_scenes_encounters_and_clues_are_just_entities(client: AsyncClient):
+    """New types cost an enum value — no new table, no new CRUD."""
+    dm = await sign_up(client, "flow-dm@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    for kind in ("scene", "encounter", "clue"):
+        made = await client.post(
+            f"{PREFIX}/campaigns/{cid}/entities",
+            json={"type": kind, "name": f"A {kind}", "data": {"kind": "investigation"}},
+            headers=dm,
+        )
+        assert made.status_code == 201, made.text
+        assert made.json()["type"] == kind
+
+
+async def test_a_scene_leads_to_another_and_survives_an_edit(client: AsyncClient):
+    """`leads_to` is the flowchart, so a body edit must not sweep it away."""
+    dm = await sign_up(client, "leads-dm@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    arrival = await make_entity(client, dm, cid, type="scene", name="Arrival at Ravenford")
+    mill = await make_entity(client, dm, cid, type="scene", name="The Old Mill")
+
+    linked = await client.post(
+        f"{PREFIX}/campaigns/{cid}/entities/{arrival['id']}/links",
+        json={"to_id": mill["id"], "relation": "leads_to"},
+        headers=dm,
+    )
+    assert linked.status_code == 201, linked.text
+
+    # Rewriting the body rewrites `mentions` — nothing else
+    await client.patch(
+        f"{PREFIX}/campaigns/{cid}/entities/{arrival['id']}",
+        json={"body": "The party arrives after dark."},
+        headers=dm,
+    )
+
+    detail = (
+        await client.get(f"{PREFIX}/campaigns/{cid}/entities/{arrival['id']}", headers=dm)
+    ).json()
+    assert [(link["name"], link["relation"]) for link in detail["links"]] == [
+        ("The Old Mill", "leads_to")
+    ]
+
+    # …and the destination knows what leads to it
+    back = (
+        await client.get(f"{PREFIX}/campaigns/{cid}/entities/{mill['id']}", headers=dm)
+    ).json()
+    assert [link["name"] for link in back["backlinks"]] == ["Arrival at Ravenford"]

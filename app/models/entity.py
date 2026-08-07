@@ -37,6 +37,9 @@ class EntityType(enum.StrEnum):
     QUEST = "quest"  # a story thread with a status — the campaign's spine
     MONSTER = "monster"  # statblock in `data`, always DM-only by default
     MAP = "map"  # an image with pins; each pin points at an entity
+    SCENE = "scene"  # a beat you run: purpose, what they learn, where it can go
+    ENCOUNTER = "encounter"  # combat, social, puzzle, chase — with an objective
+    CLUE = "clue"  # a fact the party can find, and what it points toward
 
 
 class Visibility(enum.StrEnum):
@@ -51,6 +54,7 @@ class LinkRelation(enum.StrEnum):
     LOCATED_IN = "located_in"
     OWNS = "owns"
     RELATED_TO = "related_to"
+    LEADS_TO = "leads_to"  # scene → scene: the campaign's flowchart
 
 
 class Entity(UUIDMixin, TimestampMixin, Base):
