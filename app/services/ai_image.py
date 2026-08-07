@@ -12,6 +12,7 @@ than no picture.
 import base64
 import binascii
 import uuid
+from dataclasses import dataclass
 from io import BytesIO
 
 import httpx
@@ -21,6 +22,16 @@ from PIL import Image, UnidentifiedImageError
 from app.core.config import settings
 
 OPENAI_IMAGES_URL = "https://api.openai.com/v1/images/generations"
+
+# What the DM picks between, in their words. "low" is not a warning label —
+# with the prompt below it produces a perfectly usable table illustration, and
+# it costs a quarter of what "medium" costs.
+QUALITIES: dict[str, str] = {"draft": "low", "good": "medium"}
+
+# Provider rates per million tokens, for showing the DM what a click cost.
+# Two numbers in one place beat a guess in the UI; if they move, they move here.
+IMAGE_TOKEN_RATE = 40.0
+TEXT_TOKEN_RATE = 5.0
 
 # What the picture is for, per type — a portrait and a map want different framing
 STYLES: dict[str, str] = {
@@ -48,16 +59,29 @@ def build_prompt(kind: str, name: str, description: str, extra: str | None) -> s
         parts.append(extra.strip())
 
     parts.append(STYLES.get(kind, DEFAULT_STYLE))
+    # This line does more for sharpness than paying for a better rendering pass.
+    # The old one asked for "dramatic lighting, muted palette" and got exactly
+    # that: soft, dark, mushy. Asking for crisp focus and readable shapes made
+    # the cheap tier usable — compared side by side at both price points.
     parts.append(
-        "Painted fantasy illustration, dramatic lighting, muted palette. "
-        "No text, no lettering, no watermarks, no borders."
+        "Digital fantasy illustration, crisp focus, clean readable shapes, "
+        "clear separation between foreground and background, balanced lighting "
+        "so detail stays visible. No text, no lettering, no watermark, no blur."
     )
 
     return ". ".join(parts)
 
 
-async def generate(prompt: str) -> bytes:
-    """Ask the provider for one image and hand back raw bytes."""
+@dataclass(frozen=True)
+class Generated:
+    """The picture, and what it cost — the DM is spending real money per click."""
+
+    raw: bytes
+    cents: float
+
+
+async def generate(prompt: str, quality: str | None = None) -> Generated:
+    """Ask the provider for one image and hand back the bytes with its price."""
     if not settings.OPENAI_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -73,7 +97,7 @@ async def generate(prompt: str) -> bytes:
                     "model": settings.IMAGE_MODEL,
                     "prompt": prompt[:4000],
                     "size": settings.IMAGE_SIZE,
-                    "quality": settings.IMAGE_QUALITY,
+                    "quality": QUALITIES.get(quality or "", settings.IMAGE_QUALITY),
                     "n": 1,
                 },
             )
@@ -88,7 +112,8 @@ async def generate(prompt: str) -> bytes:
         detail = response.json().get("error", {}).get("message", "Image generation failed")
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
 
-    payload = response.json().get("data") or []
+    body = response.json()
+    payload = body.get("data") or []
 
     if not payload or "b64_json" not in payload[0]:
         raise HTTPException(
@@ -96,8 +121,16 @@ async def generate(prompt: str) -> bytes:
             detail="The image provider returned nothing usable.",
         )
 
+    # The provider bills the picture as tokens and reports them; using its own
+    # count means the price shown is what was charged, not our estimate of it.
+    usage = body.get("usage") or {}
+    cents = (
+        usage.get("output_tokens", 0) * IMAGE_TOKEN_RATE
+        + usage.get("input_tokens", 0) * TEXT_TOKEN_RATE
+    ) / 10_000
+
     try:
-        return base64.b64decode(payload[0]["b64_json"])
+        return Generated(raw=base64.b64decode(payload[0]["b64_json"]), cents=round(cents, 2))
     except (binascii.Error, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

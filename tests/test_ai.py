@@ -98,3 +98,17 @@ async def test_image_prompts_lead_with_what_the_dm_wrote(client: AsyncClient):
     assert "at night, lantern light" in prompt
     assert "character portrait" in prompt
     assert "No text" in prompt
+    # The old wording ("dramatic lighting, muted palette") produced soft, murky
+    # pictures at every price point. Asking for focus is what fixed them.
+    assert "crisp focus" in prompt
+    assert "muted palette" not in prompt
+
+
+async def test_the_cheap_tier_is_the_default(client: AsyncClient):
+    """A click should cost a cent unless the DM chooses otherwise."""
+    from app.schemas.ai import IllustrateRequest
+    from app.services.ai_image import QUALITIES
+
+    assert IllustrateRequest().quality == "draft"
+    assert QUALITIES["draft"] == "low"
+    assert QUALITIES["good"] == "medium"

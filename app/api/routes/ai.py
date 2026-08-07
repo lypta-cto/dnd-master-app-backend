@@ -7,7 +7,13 @@ from app.api.campaign_deps import DmCtx
 from app.api.deps import SessionDep
 from app.models.entity import Entity
 from app.models.entity_image import EntityImage
-from app.schemas.ai import AiStatus, DraftRequest, DraftResponse, IllustrateRequest
+from app.schemas.ai import (
+    AiStatus,
+    DraftRequest,
+    DraftResponse,
+    IllustratedImage,
+    IllustrateRequest,
+)
 from app.schemas.entity import EntityImageRead
 from app.services import ai_image as image_service
 from app.services import ai_text as text_service
@@ -50,7 +56,7 @@ async def draft_description(payload: DraftRequest, context: DmCtx) -> DraftRespo
 
 @router.post(
     "/entities/{entity_id}/illustrate",
-    response_model=EntityImageRead,
+    response_model=IllustratedImage,
     status_code=status.HTTP_201_CREATED,
 )
 async def illustrate_entity(
@@ -58,7 +64,7 @@ async def illustrate_entity(
     payload: IllustrateRequest,
     context: DmCtx,
     session: SessionDep,
-) -> EntityImageRead:
+) -> IllustratedImage:
     """Draw what's already written, and file it in the entity's gallery.
 
     The prompt comes from the entity's own summary and body — an illustration
@@ -86,7 +92,8 @@ async def illustrate_entity(
         extra=payload.extra,
     )
 
-    url = image_service.store(await image_service.generate(prompt), entity.id)
+    drawn = await image_service.generate(prompt, quality=payload.quality)
+    url = image_service.store(drawn.raw, entity.id)
 
     last = await session.scalar(
         select(func.max(EntityImage.position)).where(EntityImage.entity_id == entity.id)
@@ -104,4 +111,4 @@ async def illustrate_entity(
 
     await session.flush()
     await session.refresh(image)
-    return EntityImageRead.model_validate(image)
+    return IllustratedImage(**EntityImageRead.model_validate(image).model_dump(), cents=drawn.cents)
