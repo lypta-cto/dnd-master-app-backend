@@ -9,6 +9,7 @@ from app.schemas.auth import AuthResponse, LoginRequest, MessageResponse, Regist
 from app.schemas.user import PasswordChange, UserRead, UserUpdate
 from app.services import auth as auth_service
 from app.services import media as media_service
+from app.services import players as player_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -38,6 +39,9 @@ async def register(
         password=payload.password,
         full_name=payload.full_name,
     )
+
+    # A DM may have saved them a seat before they ever signed up
+    await player_service.claim_invitations(session, user)
 
     user_agent, ip = _client_meta(request)
     raw_refresh = await auth_service.issue_refresh_token(

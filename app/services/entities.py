@@ -31,9 +31,7 @@ async def unique_slug(
     suffix = 2
 
     while True:
-        query = select(Entity.id).where(
-            Entity.campaign_id == campaign_id, Entity.slug == candidate
-        )
+        query = select(Entity.id).where(Entity.campaign_id == campaign_id, Entity.slug == candidate)
         if exclude_id is not None:
             query = query.where(Entity.id != exclude_id)
 
@@ -106,9 +104,7 @@ async def sync_wiki_links(session: AsyncSession, entity: Entity) -> tuple[int, l
         if target.id == entity.id:
             continue  # self-references aren't links
 
-        session.add(
-            EntityLink(from_id=entity.id, to_id=target.id, relation=LinkRelation.MENTIONS)
-        )
+        session.add(EntityLink(from_id=entity.id, to_id=target.id, relation=LinkRelation.MENTIONS))
         linked += 1
 
     await session.flush()

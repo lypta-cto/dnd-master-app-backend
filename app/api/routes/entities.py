@@ -8,6 +8,7 @@ from app.api.campaign_deps import CampaignCtx, DmCtx
 from app.api.deps import SessionDep
 from app.models.entity import Entity, EntityLink, EntityType, Visibility
 from app.models.entity_image import EntityImage
+from app.models.player import Player
 from app.schemas.auth import MessageResponse
 from app.schemas.entity import (
     CampaignImage,
@@ -25,6 +26,7 @@ from app.schemas.entity import (
 )
 from app.services import entities as entity_service
 from app.services import media as media_service
+from app.services import players as player_service
 
 router = APIRouter(prefix="/campaigns/{campaign_id}", tags=["entities"])
 
@@ -96,9 +98,17 @@ def _can_write(context: CampaignCtx, entity: Entity) -> bool:
     )
 
 
-async def _load_writable(
-    session: SessionDep, context: CampaignCtx, entity_id: uuid.UUID
-) -> Entity:
+async def _require_seat(session: SessionDep, context: CampaignCtx, player_id: uuid.UUID) -> Player:
+    """A sheet can only be handed to a seat at this table."""
+    player = await session.get(Player, player_id)
+
+    if player is None or player.campaign_id != context.campaign.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found")
+
+    return player
+
+
+async def _load_writable(session: SessionDep, context: CampaignCtx, entity_id: uuid.UUID) -> Entity:
     """Load an entity the caller is allowed to change, or refuse."""
     entity = await _load(session, context, entity_id)
 
@@ -174,14 +184,31 @@ async def create_entity(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Only the DM can do that"
             )
-        payload.owner_id = context.user.id
+        # Their own seat, whatever the request asked for
+        seat = await player_service.seat_for_user(session, context.campaign.id, context.user.id)
+        payload.player_id = seat.id if seat else None
         # A sheet the party can see; the DM can tighten it later if wanted
         payload.visibility = Visibility.SHARED
+
+    is_character = payload.type is EntityType.CHARACTER
+    seat = (
+        await _require_seat(session, context, payload.player_id)
+        if is_character and payload.player_id is not None
+        else None
+    )
+
+    # Resolved before the insert so the row lands complete in one statement.
+    # A seat without an account owns nothing; a player creating a sheet keeps it
+    # either way, seat or no seat.
+    owner_id = seat.user_id if seat else None
+    if not context.is_dm and owner_id is None:
+        owner_id = context.user.id
 
     entity = Entity(
         campaign_id=context.campaign.id,
         type=payload.type,
-        owner_id=payload.owner_id if payload.type is EntityType.CHARACTER else None,
+        player_id=seat.id if seat else None,
+        owner_id=owner_id if is_character else None,
         name=payload.name,
         slug=await entity_service.unique_slug(session, context.campaign.id, payload.name),
         summary=payload.summary,
@@ -217,13 +244,15 @@ async def update_entity(
     entity = await _load(session, context, entity_id)
 
     if not _can_write(context, entity):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Only the DM can do that"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the DM can do that")
 
-    # A player edits the sheet, not who gets to see it
+    # A player edits the sheet, not who gets to see it or whose it is
     if not context.is_dm:
         changes.pop("visibility", None)
+        changes.pop("player_id", None)
+
+    if changes.get("player_id") is not None:
+        await _require_seat(session, context, changes["player_id"])
 
     rewritten = 0
     old_name = entity.name
@@ -235,6 +264,9 @@ async def update_entity(
 
     for field, value in changes.items():
         setattr(entity, field, value)
+
+    if "player_id" in changes:
+        await player_service.sync_character_owner(session, entity)
 
     await session.flush()
 
@@ -295,9 +327,7 @@ async def create_link(
     ).scalar_one_or_none()
 
     if exists is None:
-        session.add(
-            EntityLink(from_id=entity.id, to_id=target.id, relation=payload.relation)
-        )
+        session.add(EntityLink(from_id=entity.id, to_id=target.id, relation=payload.relation))
         await session.flush()
 
     return EntityRead.model_validate(entity)
@@ -319,6 +349,7 @@ async def delete_link(
         removed += 1
 
     return MessageResponse(message=f"Removed {removed} link(s)")
+
 
 # --- Gallery -----------------------------------------------------------------
 #

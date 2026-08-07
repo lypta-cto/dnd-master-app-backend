@@ -77,9 +77,7 @@ async def _campaign_for_token(session, campaign_id: uuid.UUID, token: str) -> Ca
     campaign = await session.get(Campaign, campaign_id)
 
     if campaign is None or not token or campaign.display_token != token:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Unknown display link"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown display link")
 
     return campaign
 

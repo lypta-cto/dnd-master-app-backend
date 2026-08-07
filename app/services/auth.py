@@ -127,9 +127,7 @@ async def rotate_refresh_token(
         return None
 
     stored.revoked_at = datetime.now(UTC)
-    new_raw = await issue_refresh_token(
-        session, user, user_agent=user_agent, ip_address=ip_address
-    )
+    new_raw = await issue_refresh_token(session, user, user_agent=user_agent, ip_address=ip_address)
     return user, new_raw
 
 

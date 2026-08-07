@@ -52,9 +52,7 @@ async def list_campaigns(session: SessionDep, user: CurrentUser) -> list[Campaig
     roles = {
         row.campaign_id: row.role
         for row in (
-            await session.execute(
-                select(CampaignMember).where(CampaignMember.user_id == user.id)
-            )
+            await session.execute(select(CampaignMember).where(CampaignMember.user_id == user.id))
         ).scalars()
     }
 
@@ -85,9 +83,7 @@ async def create_campaign(
     await session.flush()
 
     # The owner is also a member, so member lists don't have to special-case them
-    session.add(
-        CampaignMember(campaign_id=campaign.id, user_id=user.id, role=CampaignRole.DM)
-    )
+    session.add(CampaignMember(campaign_id=campaign.id, user_id=user.id, role=CampaignRole.DM))
     await session.flush()
 
     return CampaignDetail.model_validate(campaign).model_copy(
@@ -161,9 +157,7 @@ async def list_members(context: CampaignCtx, session: SessionDep) -> list[Member
 @router.post(
     "/{campaign_id}/members", response_model=MemberRead, status_code=status.HTTP_201_CREATED
 )
-async def invite_member(
-    payload: MemberInvite, context: DmCtx, session: SessionDep
-) -> MemberRead:
+async def invite_member(payload: MemberInvite, context: DmCtx, session: SessionDep) -> MemberRead:
     user = await auth_service.get_user_by_email(session, payload.email)
 
     if user is None:
@@ -186,9 +180,7 @@ async def invite_member(
             status_code=status.HTTP_409_CONFLICT, detail="Already a member of this campaign"
         )
 
-    member = CampaignMember(
-        campaign_id=context.campaign.id, user_id=user.id, role=payload.role
-    )
+    member = CampaignMember(campaign_id=context.campaign.id, user_id=user.id, role=payload.role)
     session.add(member)
     await session.flush()
 

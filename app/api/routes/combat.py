@@ -16,9 +16,7 @@ router = APIRouter(prefix="/campaigns/{campaign_id}/combat", tags=["combat"])
 
 async def _state_for(session: SessionDep, campaign_id: uuid.UUID) -> CombatState:
     state = (
-        await session.execute(
-            select(CombatState).where(CombatState.campaign_id == campaign_id)
-        )
+        await session.execute(select(CombatState).where(CombatState.campaign_id == campaign_id))
     ).scalar_one_or_none()
 
     if state is None:

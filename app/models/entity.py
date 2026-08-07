@@ -19,6 +19,7 @@ from app.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
     from app.models.campaign import Campaign
+    from app.models.player import Player
 
 
 class EntityType(enum.StrEnum):
@@ -66,10 +67,18 @@ class Entity(UUIDMixin, TimestampMixin, Base):
         ForeignKey("campaigns.id", ondelete="CASCADE"), index=True, nullable=False
     )
 
-    # Set only on characters: the player whose sheet this is. Ownership is what
-    # grants a non-DM write access, and it always beats visibility for reading.
+    # Set only on characters: the account that may edit this sheet. Ownership is
+    # what grants a non-DM write access, and it always beats visibility for
+    # reading. Empty for the common case — a player who never registered.
     owner_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+
+    # Set only on characters: whose sheet this is at the table. Independent of
+    # `owner_id` on purpose — a seat exists whether or not anyone logs in, and
+    # deleting a player leaves their character behind rather than the story.
+    player_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("players.id", ondelete="SET NULL"), index=True
     )
 
     type: Mapped[EntityType] = mapped_column(
@@ -108,6 +117,7 @@ class Entity(UUIDMixin, TimestampMixin, Base):
     )
 
     campaign: Mapped["Campaign"] = relationship(back_populates="entities")
+    player: Mapped["Player | None"] = relationship(back_populates="characters")
 
     def __repr__(self) -> str:
         return f"<Entity {self.type.value}:{self.name}>"

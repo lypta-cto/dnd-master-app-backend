@@ -9,7 +9,17 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.api.routes import auth, campaigns, cast, combat, entities, oauth, users, workspace
+from app.api.routes import (
+    auth,
+    campaigns,
+    cast,
+    combat,
+    entities,
+    oauth,
+    players,
+    users,
+    workspace,
+)
 from app.core.config import settings
 from app.core.database import engine
 
@@ -53,6 +63,7 @@ def create_app() -> FastAPI:
     app.include_router(users.router, prefix=settings.API_V1_PREFIX)
     app.include_router(workspace.router, prefix=settings.API_V1_PREFIX)
     app.include_router(campaigns.router, prefix=settings.API_V1_PREFIX)
+    app.include_router(players.router, prefix=settings.API_V1_PREFIX)
     app.include_router(entities.router, prefix=settings.API_V1_PREFIX)
     app.include_router(cast.router, prefix=settings.API_V1_PREFIX)
     app.include_router(combat.router, prefix=settings.API_V1_PREFIX)
@@ -82,8 +93,7 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={
-                "detail": "Database unavailable. Is Postgres running? "
-                "Try: docker compose up -d db"
+                "detail": "Database unavailable. Is Postgres running? Try: docker compose up -d db"
             },
         )
 

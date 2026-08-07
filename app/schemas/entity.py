@@ -20,8 +20,9 @@ class EntityBase(BaseModel):
 
 class EntityCreate(EntityBase):
     type: EntityType
-    # Characters only: which player's sheet this is (DM assigns; players get themselves)
-    owner_id: uuid.UUID | None = None
+    # Characters only: whose sheet this is at the table. The account that may
+    # edit it follows from the seat, so `owner_id` isn't taken from the client.
+    player_id: uuid.UUID | None = None
 
 
 class EntityUpdate(BaseModel):
@@ -32,6 +33,8 @@ class EntityUpdate(BaseModel):
     visibility: Visibility | None = None
     data: dict[str, Any] | None = None
     image_url: str | None = Field(default=None, max_length=1024)
+    # Characters only, DM only: hand the sheet to a different seat
+    player_id: uuid.UUID | None = None
 
 
 class EntitySummary(BaseModel):
@@ -42,6 +45,7 @@ class EntitySummary(BaseModel):
     id: uuid.UUID
     type: EntityType
     owner_id: uuid.UUID | None = None
+    player_id: uuid.UUID | None = None
     name: str
     slug: str
     summary: str | None

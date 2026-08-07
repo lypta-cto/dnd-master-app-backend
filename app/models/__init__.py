@@ -6,6 +6,7 @@ from app.models.cast import CastMode, CastState
 from app.models.combat import CombatState
 from app.models.entity import Entity, EntityLink, EntityType, LinkRelation, Visibility
 from app.models.entity_image import EntityImage
+from app.models.player import Player
 from app.models.refresh_token import RefreshToken
 from app.models.user import Role, User
 from app.models.workspace import Workspace
@@ -20,6 +21,7 @@ __all__ = [
     "CombatState",
     "Entity",
     "EntityImage",
+    "Player",
     "EntityLink",
     "EntityType",
     "LinkRelation",

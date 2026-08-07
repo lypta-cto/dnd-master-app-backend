@@ -33,6 +33,4 @@ class CombatState(UUIDMixin, TimestampMixin, Base):
 
     # [{id, name, kind: character|monster|custom, entity_id?, initiative,
     #   max_hp?, current_hp?, conditions: []}]
-    combatants: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSONB, default=list, nullable=False
-    )
+    combatants: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
