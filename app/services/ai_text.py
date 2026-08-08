@@ -80,9 +80,39 @@ def configured() -> bool:
     return bool(settings.OPENAI_API_KEY)
 
 
-def build_prompt(kind: str, name: str, brief: str | None, context: str | None) -> str:
+def describe_facts(facts: dict[str, str] | None) -> str:
+    """The type's own fields as a sentence the model will actually use.
+
+    These were being left out entirely, which is how a kobold beggar came back
+    described as a cheerful human innkeeper: race and occupation were sitting
+    in the form the whole time and never reached the prompt.
+    """
+    if not facts:
+        return ""
+
+    written = [
+        f"{key.replace('_', ' ')}: {str(value).strip()}"
+        for key, value in facts.items()
+        # `dm_` fields are the DM's private notes about the thing, not a
+        # description of it — and sending them would put the twist in the prose
+        # the players get read.
+        if value and not key.startswith("dm_") and key not in {"cover_focus", "pins", "fog"}
+    ]
+
+    return ", ".join(written)
+
+
+def build_prompt(
+    kind: str,
+    name: str,
+    brief: str | None,
+    context: str | None,
+    facts: dict[str, str] | None = None,
+) -> str:
     parts = [BRIEFS.get(kind, DEFAULT_BRIEF), f"\nIt is called: {name}"]
 
+    if (written := describe_facts(facts)):
+        parts.append(f"\nWhat is already established about it — keep all of it true: {written}")
     if brief:
         parts.append(f"\nThe DM's notes: {brief}")
     if context:
@@ -109,13 +139,21 @@ class Drafted:
     cents: float
 
 
-async def draft(kind: str, name: str, brief: str | None, context: str | None) -> Drafted:
+async def draft(
+    kind: str,
+    name: str,
+    brief: str | None,
+    context: str | None,
+    facts: dict[str, str] | None = None,
+) -> Drafted:
     """One short draft. A paragraph, not a plan — a small model is the right size."""
     if not settings.OPENAI_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Drafting is off — set OPENAI_API_KEY to turn it on.",
         )
+
+    prompt = build_prompt(kind, name, brief, context, facts)
 
     try:
         async with httpx.AsyncClient(timeout=60) as client:
@@ -126,7 +164,7 @@ async def draft(kind: str, name: str, brief: str | None, context: str | None) ->
                     "model": settings.AI_TEXT_MODEL,
                     "messages": [
                         {"role": "system", "content": SYSTEM},
-                        {"role": "user", "content": build_prompt(kind, name, brief, context)},
+                        {"role": "user", "content": prompt},
                     ],
                     "max_tokens": 700,
                 },

@@ -21,6 +21,10 @@ class DraftRequest(BaseModel):
     # What the DM already knows about it; the draft is built around this
     brief: str | None = Field(default=None, max_length=2000)
     use_campaign_context: bool = True
+    # The type's own fields as they stand in the form. Unsaved, so the client
+    # has to send them — and without them a kobold beggar comes back described
+    # as a cheerful human innkeeper.
+    facts: dict[str, str] = Field(default_factory=dict)
 
 
 class DraftResponse(BaseModel):

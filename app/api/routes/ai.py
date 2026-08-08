@@ -121,6 +121,7 @@ async def draft_description(
         name=payload.name,
         brief=payload.brief,
         context=_campaign_context(context) if payload.use_campaign_context else None,
+        facts=payload.facts,
     )
 
     await coin_service.record(
@@ -158,7 +159,21 @@ async def illustrate_entity(
     if entity is None or entity.campaign_id != context.campaign.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
-    description = " ".join(part for part in (entity.summary, entity.body) if part).strip()
+    # The type's own fields go in too. A kobold beggar was coming back drawn as
+    # a cheerful human innkeeper, because race and occupation were sitting in
+    # `data` and only the prose ever reached the model. `describe_facts` drops
+    # the `dm_` keys, so the twist doesn't end up in a picture the party sees.
+    facts = text_service.describe_facts(
+        {
+            key: str(value)
+            for key, value in entity.data.items()
+            if isinstance(value, str | int | float)
+        }
+    )
+
+    description = " ".join(
+        part for part in (entity.summary, facts, entity.body) if part
+    ).strip()
 
     if not description and not payload.extra:
         raise HTTPException(

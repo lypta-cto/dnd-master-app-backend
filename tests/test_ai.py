@@ -181,3 +181,38 @@ async def test_the_purse_is_the_dms_and_scoped_to_one_campaign(client: AsyncClie
     # Spending is the DM's, and so is the record of it
     refused = await client.get(f"{PREFIX}/campaigns/{cid}/ai/purse", headers=player)
     assert refused.status_code == 403
+
+
+async def test_the_prompt_carries_what_the_dm_already_filled_in(client: AsyncClient):
+    """A kobold beggar was coming back as a cheerful human innkeeper: race and
+    occupation sat in the form and never reached the model."""
+    from app.services import ai_text
+
+    prompt = ai_text.build_prompt(
+        kind="npc",
+        name="Vlerija",
+        brief="Krčmarica.",
+        context=None,
+        facts={"race": "Kobold", "occupation": "Beggar", "status": "alive"},
+    )
+
+    assert "Kobold" in prompt
+    assert "Beggar" in prompt
+
+
+async def test_the_dms_private_notes_never_reach_the_model(client: AsyncClient):
+    """`dm_` fields are the twist. Drafting from them would write it into the
+    prose the players get read."""
+    from app.services import ai_text
+
+    written = ai_text.describe_facts(
+        {
+            "race": "Kobold",
+            "dm_players_think": "She is harmless",
+            "dm_notes": "She poisons the ale",
+        }
+    )
+
+    assert "Kobold" in written
+    assert "poisons" not in written
+    assert "harmless" not in written
