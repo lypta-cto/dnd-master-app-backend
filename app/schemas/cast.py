@@ -44,11 +44,30 @@ class CastUpdate(BaseModel):
         return self
 
 
+class InitiativeEntry(BaseModel):
+    """One name in the strip. What the table may know and nothing else — no
+    hit points, no conditions, just who is up and who is down."""
+
+    name: str = Field(min_length=1, max_length=200)
+    kind: str = Field(default="custom", max_length=20)
+    down: bool = False
+    active: bool = False
+
+
+class InitiativeUpdate(BaseModel):
+    """Empty clears it. Kept apart from a cast so the strip survives one."""
+
+    entries: list[InitiativeEntry] = Field(default_factory=list, max_length=60)
+    round: int = Field(default=1, ge=1, le=999)
+
+
 class CastRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     mode: CastMode
     payload: dict[str, Any]
+    # Rides above whatever `mode` is showing, and is not replaced by a cast
+    initiative: dict[str, Any] = Field(default_factory=dict)
 
 
 class CastStatus(CastRead):

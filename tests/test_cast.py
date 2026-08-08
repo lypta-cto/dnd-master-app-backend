@@ -214,3 +214,43 @@ async def test_dice_cast_carries_a_valid_roll(client: AsyncClient):
     )
     assert ok.status_code == 200
     assert ok.json()["payload"]["total"] == 9
+
+
+async def test_the_initiative_strip_survives_a_cast(client: AsyncClient):
+    """It used to be a cast mode, so the table saw the order *or* the map and
+    casting the map mid-fight silently took the order away."""
+    dm = await sign_up(client, "strip-dm@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    up = await client.put(
+        f"{PREFIX}/campaigns/{cid}/cast/initiative",
+        json={
+            "round": 2,
+            "entries": [
+                {"name": "Varvarin", "kind": "character", "active": True},
+                {"name": "Goblin", "kind": "monster", "down": True},
+            ],
+        },
+        headers=dm,
+    )
+    assert up.status_code == 200
+    assert up.json()["initiative"]["round"] == 2
+
+    # Now put something else on the table entirely
+    await client.put(
+        f"{PREFIX}/campaigns/{cid}/cast",
+        json={"mode": "text", "payload": {"text": "The doors grind open."}},
+        headers=dm,
+    )
+
+    after = (await client.get(f"{PREFIX}/campaigns/{cid}/cast", headers=dm)).json()
+    assert after["mode"] == "text"
+    assert [e["name"] for e in after["initiative"]["entries"]] == ["Varvarin", "Goblin"]
+
+    # Empty takes it down without touching what's underneath
+    await client.put(
+        f"{PREFIX}/campaigns/{cid}/cast/initiative", json={"entries": []}, headers=dm
+    )
+    cleared = (await client.get(f"{PREFIX}/campaigns/{cid}/cast", headers=dm)).json()
+    assert cleared["initiative"] == {}
+    assert cleared["mode"] == "text"

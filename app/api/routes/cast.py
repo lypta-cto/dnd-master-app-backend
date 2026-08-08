@@ -9,7 +9,7 @@ from app.api.deps import SessionDep
 from app.core.database import SessionLocal
 from app.models.campaign import Campaign
 from app.models.cast import CastState
-from app.schemas.cast import CastRead, CastStatus, CastUpdate
+from app.schemas.cast import CastRead, CastStatus, CastUpdate, InitiativeUpdate
 from app.services import cast as cast_service
 
 router = APIRouter(tags=["cast"])
@@ -38,6 +38,38 @@ async def read_cast(context: CampaignCtx, session: SessionDep) -> CastStatus:
     return CastStatus(
         mode=state.mode,
         payload=state.payload,
+        initiative=state.initiative,
+        displays_connected=cast_service.subscriber_count(context.campaign.id),
+    )
+
+
+@router.put("/campaigns/{campaign_id}/cast/initiative", response_model=CastStatus)
+async def set_initiative(
+    payload: InitiativeUpdate, context: DmCtx, session: SessionDep
+) -> CastStatus:
+    """The strip above whatever else is showing.
+
+    Its own endpoint because it has its own lifetime: it goes up when the fight
+    starts and comes down when the fight ends, and everything cast in between —
+    the battle map, a portrait, a dice roll — happens underneath it. Folding it
+    into the cast payload would mean every one of those replaced it.
+    """
+    state = await _state_for(session, context.campaign.id)
+    # An empty list clears the strip rather than leaving an empty box on the
+    # wall — the fight is over, so the header goes with it.
+    state.initiative = (
+        {"round": payload.round, "entries": [e.model_dump() for e in payload.entries]}
+        if payload.entries
+        else {}
+    )
+    await session.flush()
+    await session.commit()
+    cast_service.publish(context.campaign.id)
+
+    return CastStatus(
+        mode=state.mode,
+        payload=state.payload,
+        initiative=state.initiative,
         displays_connected=cast_service.subscriber_count(context.campaign.id),
     )
 
@@ -63,6 +95,7 @@ async def set_cast(payload: CastUpdate, context: DmCtx, session: SessionDep) -> 
     return CastStatus(
         mode=state.mode,
         payload=state.payload,
+        initiative=state.initiative,
         displays_connected=cast_service.subscriber_count(context.campaign.id),
     )
 
@@ -91,7 +124,7 @@ async def read_cast_public(
     """The display's initial render, and what it re-reads after every event."""
     campaign = await _campaign_for_token(session, campaign_id, t)
     state = await _state_for(session, campaign.id)
-    return CastRead(mode=state.mode, payload=state.payload)
+    return CastRead(mode=state.mode, payload=state.payload, initiative=state.initiative)
 
 
 @router.get("/cast/{campaign_id}/stream")

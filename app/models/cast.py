@@ -45,3 +45,11 @@ class CastState(UUIDMixin, TimestampMixin, Base):
 
     # Shape depends on `mode` — see app/schemas/cast.py
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+
+    # The initiative strip, kept apart from `payload` on purpose.
+    #
+    # Everything else the table sees is exclusive: a map replaces an image
+    # replaces a dice roll. The order of turns isn't — while a fight is running
+    # it belongs above whatever else is up, and casting the battle map must not
+    # take it away. So it survives a cast rather than being replaced by one.
+    initiative: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
