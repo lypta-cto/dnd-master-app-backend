@@ -3,7 +3,7 @@ import unicodedata
 import uuid
 from typing import Any
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.entity import Entity, EntityLink, LinkRelation, Visibility
@@ -300,3 +300,71 @@ async def outgoing_links(
         statement = statement.where(visible)
 
     return [(row[0], row[1]) for row in (await session.execute(statement)).all()]
+
+
+# --- Where a thing sits in the world -----------------------------------------
+
+# A scene is in an inn, in a town, in a region. Three is the shape this was
+# built for; the cap is what keeps a cycle from becoming an infinite walk.
+MAX_ANCESTRY_DEPTH = 12
+
+
+async def ancestors(
+    session: AsyncSession,
+    entity_id: uuid.UUID,
+    *,
+    is_dm: bool,
+    user_id: uuid.UUID | None = None,
+) -> list[Entity]:
+    """Everything this sits inside, outermost first.
+
+    One recursive query rather than a request per level: a scene three deep
+    would otherwise cost three round trips before the page could draw its own
+    breadcrumb. The depth cap makes it safe even against data that already has
+    a loop in it — `create_link` refuses to make one, but a database that has
+    outlived several versions of an application deserves a belt as well.
+
+    A player sees only the parts of the chain they're allowed to; a hidden
+    region simply drops out rather than hiding everything below it.
+    """
+    chain = (
+        select(EntityLink.to_id.label("id"), literal(1).label("depth"))
+        .where(EntityLink.from_id == entity_id, EntityLink.relation == LinkRelation.LOCATED_IN)
+        .cte("chain", recursive=True)
+    )
+
+    chain = chain.union_all(
+        select(EntityLink.to_id, (chain.c.depth + 1))
+        .join(chain, EntityLink.from_id == chain.c.id)
+        .where(
+            EntityLink.relation == LinkRelation.LOCATED_IN,
+            chain.c.depth < MAX_ANCESTRY_DEPTH,
+        )
+    )
+
+    statement = (
+        select(Entity, chain.c.depth)
+        .join(chain, Entity.id == chain.c.id)
+        .order_by(chain.c.depth.desc())
+    )
+
+    if (visible := visibility_filter(is_dm, user_id)) is not None:
+        statement = statement.where(visible)
+
+    return [row[0] for row in (await session.execute(statement)).all()]
+
+
+async def would_make_a_loop(
+    session: AsyncSession, child_id: uuid.UUID, parent_id: uuid.UUID
+) -> bool:
+    """Is the proposed parent already somewhere below the child?
+
+    Putting a region inside one of its own towns reads as a typo, but the
+    result is a breadcrumb that never terminates and a tree that can't be
+    drawn. Cheaper to refuse than to defend against everywhere afterwards.
+    """
+    if child_id == parent_id:
+        return True
+
+    seen = await ancestors(session, parent_id, is_dm=True)
+    return any(entity.id == child_id for entity in seen)

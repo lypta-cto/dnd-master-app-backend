@@ -6,7 +6,7 @@ from sqlalchemy import func, or_, select
 
 from app.api.campaign_deps import CampaignCtx, DmCtx
 from app.api.deps import SessionDep
-from app.models.entity import Entity, EntityLink, EntityType, Visibility
+from app.models.entity import Entity, EntityLink, EntityType, LinkRelation, Visibility
 from app.models.entity_image import EntityImage
 from app.models.player import Player
 from app.schemas.auth import MessageResponse
@@ -74,12 +74,17 @@ async def _detail(
             if name.casefold() not in resolved
         ]
 
+    above = await entity_service.ancestors(
+        session, entity.id, is_dm=context.is_dm, user_id=context.user.id
+    )
+
     return EntityDetail(
         **EntityRead.model_validate(entity)
         .model_copy(update={"data": entity_service.visible_data(entity.data, context.is_dm)})
         .model_dump(),
         links=_as_linked(links, context.is_dm),
         backlinks=_as_linked(backs, context.is_dm),
+        ancestors=[_summary(parent, context.is_dm) for parent in above],
         unresolved_links=unresolved,
     )
 
@@ -403,6 +408,18 @@ async def create_link(
     if entity.id == target.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="An entity can't link to itself"
+        )
+
+    # Containment is the one relation with a direction that has to stay
+    # acyclic. Putting a region inside one of its own towns reads as a typo,
+    # but what it produces is a breadcrumb that never ends and a tree that
+    # can't be drawn — cheaper to refuse here than to defend everywhere after.
+    if payload.relation is LinkRelation.LOCATED_IN and await entity_service.would_make_a_loop(
+        session, entity.id, target.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"“{target.name}” is already inside “{entity.name}”",
         )
 
     exists = (

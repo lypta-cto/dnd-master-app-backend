@@ -74,6 +74,10 @@ class EntityDetail(EntityRead):
     rewritten_references: int = 0
     links: list[LinkedEntity] = Field(default_factory=list)
     backlinks: list[LinkedEntity] = Field(default_factory=list)
+    # Where this sits in the world, outermost first — region, town, building.
+    # Carried on the detail rather than fetched separately so a page can draw
+    # its own breadcrumb without a second round trip and a visible flash.
+    ancestors: list[EntitySummary] = Field(default_factory=list)
     # Names in [[…]] that don't match anything yet, so the UI can offer to
     # create them instead of silently dropping the reference
     unresolved_links: list[str] = Field(default_factory=list)

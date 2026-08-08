@@ -490,3 +490,86 @@ async def test_only_the_dm_paints_fog(client: AsyncClient):
     # But they must be able to read it, or their own screen can't draw the fog
     seen = await client.get(f"{PREFIX}/campaigns/{cid}/entities/{entity['id']}", headers=player)
     assert seen.status_code == 200
+
+
+# --- Where a thing sits in the world -------------------------------------------
+
+
+async def link(client, headers, cid, child, parent, relation="located_in"):
+    return await client.post(
+        f"{PREFIX}/campaigns/{cid}/entities/{child}/links",
+        json={"to_id": parent, "relation": relation},
+        headers=headers,
+    )
+
+
+async def test_a_scene_knows_the_whole_chain_it_sits_in(client: AsyncClient):
+    """Region → town → building → scene, in one request rather than four."""
+    dm = await sign_up(client, "world-dm@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    region = await make_entity(client, dm, cid, type="location", name="Barovia")
+    town = await make_entity(client, dm, cid, type="location", name="Vallaki")
+    inn = await make_entity(client, dm, cid, type="location", name="Blue Water Inn")
+    scene = await make_entity(client, dm, cid, type="scene", name="Prvi susret")
+
+    await link(client, dm, cid, town["id"], region["id"])
+    await link(client, dm, cid, inn["id"], town["id"])
+    await link(client, dm, cid, scene["id"], inn["id"])
+
+    detail = await client.get(f"{PREFIX}/campaigns/{cid}/entities/{scene['id']}", headers=dm)
+
+    # Outermost first, so the UI can print it straight through as a breadcrumb
+    assert [a["name"] for a in detail.json()["ancestors"]] == [
+        "Barovia", "Vallaki", "Blue Water Inn"
+    ]
+
+
+async def test_a_place_cannot_be_put_inside_itself(client: AsyncClient):
+    """The result isn't a wrong answer, it's a breadcrumb that never ends."""
+    dm = await sign_up(client, "world-loop@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    region = await make_entity(client, dm, cid, type="location", name="Barovia")
+    town = await make_entity(client, dm, cid, type="location", name="Vallaki")
+
+    await link(client, dm, cid, town["id"], region["id"])
+    refused = await link(client, dm, cid, region["id"], town["id"])
+
+    assert refused.status_code == 400
+    assert "Vallaki" in refused.json()["detail"]
+
+    # And the chain that did exist is untouched
+    detail = await client.get(f"{PREFIX}/campaigns/{cid}/entities/{town['id']}", headers=dm)
+    assert [a["name"] for a in detail.json()["ancestors"]] == ["Barovia"]
+
+
+async def test_a_hidden_region_drops_out_rather_than_hiding_what_is_under_it(
+    client: AsyncClient,
+):
+    """A player shouldn't lose the town they know because its region is secret."""
+    dm = await sign_up(client, "world-secret@example.com")
+    player = await sign_up(client, "world-player@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    await client.post(
+        f"{PREFIX}/campaigns/{cid}/members",
+        json={"email": "world-player@example.com", "role": "player"},
+        headers=dm,
+    )
+
+    region = await make_entity(
+        client, dm, cid, type="location", name="Skrivena zemlja", visibility="dm_only"
+    )
+    town = await make_entity(
+        client, dm, cid, type="location", name="Vranov Brod", visibility="shared"
+    )
+    await link(client, dm, cid, town["id"], region["id"])
+
+    seen = await client.get(f"{PREFIX}/campaigns/{cid}/entities/{town['id']}", headers=player)
+    assert seen.status_code == 200
+    assert seen.json()["ancestors"] == []
+
+    # The DM still sees the whole chain
+    theirs = await client.get(f"{PREFIX}/campaigns/{cid}/entities/{town['id']}", headers=dm)
+    assert [a["name"] for a in theirs.json()["ancestors"]] == ["Skrivena zemlja"]
