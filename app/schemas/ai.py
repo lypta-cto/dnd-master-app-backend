@@ -51,6 +51,17 @@ class Purse(BaseModel):
     spent_usd: float
     coins_per_dollar: int
     entries: list[CoinEntryRead] = Field(default_factory=list)
+    #: True when an admin key is configured and the figure below can be read
+    can_reconcile: bool = False
+
+
+class BilledRead(BaseModel):
+    """What OpenAI says the whole account spent — not this campaign, and not
+    the balance remaining, which OpenAI publishes nowhere."""
+
+    usd: float
+    currency: str
+    days: int
 
 
 class TopUpRequest(BaseModel):

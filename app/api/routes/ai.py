@@ -10,6 +10,7 @@ from app.models.entity import Entity
 from app.models.entity_image import EntityImage
 from app.schemas.ai import (
     AiStatus,
+    BilledRead,
     CoinEntryRead,
     DraftRequest,
     DraftResponse,
@@ -22,6 +23,7 @@ from app.schemas.entity import EntityImageRead
 from app.services import ai_image as image_service
 from app.services import ai_text as text_service
 from app.services import coins as coin_service
+from app.services import openai_costs as billing
 
 router = APIRouter(prefix="/campaigns/{campaign_id}/ai", tags=["ai"])
 
@@ -64,6 +66,7 @@ async def read_purse(context: DmCtx, session: SessionDep) -> Purse:
         spent_on_images=coin_service.coins(totals["image"]),
         spent_usd=round((totals["text"] + totals["image"]) / 1_000_000, 4),
         coins_per_dollar=coin_service.COINS_PER_DOLLAR,
+        can_reconcile=billing.configured(),
         entries=[
             CoinEntryRead(
                 id=entry.id,
@@ -96,6 +99,18 @@ async def top_up(payload: TopUpRequest, context: DmCtx, session: SessionDep) -> 
     await session.flush()
 
     return await read_purse(context, session)
+
+
+@router.get("/purse/billed", response_model=BilledRead)
+async def read_billed(context: DmCtx, days: int = 30) -> BilledRead:
+    """What OpenAI says the account was actually billed, for comparison.
+
+    Two caveats worth keeping in front of whoever reads it. This is the whole
+    organisation, not this campaign — anything else on the same OpenAI account
+    is in the figure. And it is spending, not the balance left: OpenAI
+    publishes no endpoint for the balance at all.
+    """
+    return BilledRead(**await billing.spent_since(days))
 
 
 def _campaign_context(context: DmCtx) -> str | None:

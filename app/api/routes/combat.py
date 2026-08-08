@@ -41,6 +41,10 @@ async def set_combat(payload: CombatUpdate, context: DmCtx, session: SessionDep)
     state.active = payload.active
     state.round = payload.round
     state.turn_index = payload.turn_index
+    # Assigned like the rest: a whole-state replace that quietly kept one field
+    # would be worse than not having it, because the DM would pick a battle map
+    # and watch it come back empty.
+    state.map_id = payload.map_id
     state.combatants = [c.model_dump(mode="json") for c in payload.combatants]
 
     await session.flush()

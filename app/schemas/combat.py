@@ -16,10 +16,17 @@ class Combatant(BaseModel):
     max_hp: int | None = Field(default=None, ge=0, le=9999)
     current_hp: int | None = Field(default=None, ge=0, le=9999)
     conditions: list[str] = Field(default_factory=list, max_length=20)
+    # Where the token sits, as percentages of the map. Absent means "not
+    # placed yet" rather than "top-left corner", which is why these are
+    # nullable instead of defaulting to zero.
+    x: float | None = Field(default=None, ge=0, le=100)
+    y: float | None = Field(default=None, ge=0, le=100)
 
 
 class CombatUpdate(BaseModel):
     active: bool = False
+    #: The map the fight is on, if any
+    map_id: uuid.UUID | None = None
     round: int = Field(default=1, ge=1, le=999)
     turn_index: int = Field(default=0, ge=0)
     combatants: list[Combatant] = Field(default_factory=list, max_length=100)

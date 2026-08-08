@@ -100,6 +100,12 @@ class Settings(BaseSettings):
     # drafting a paragraph and drawing one picture are small jobs, so the
     # cheap models are the right size.
     OPENAI_API_KEY: str | None = None
+
+    # A second, admin-scoped key, only for reading what the account was
+    # actually billed. The project key above cannot: OpenAI refuses billing
+    # endpoints to it. Optional — without it the purse simply shows our own
+    # ledger, which is what it did before.
+    OPENAI_ADMIN_KEY: str | None = None
     AI_TEXT_MODEL: str = "gpt-4o-mini"
 
     # The mini model bills its output at a fifth of the full one for the same
