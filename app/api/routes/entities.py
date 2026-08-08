@@ -18,6 +18,7 @@ from app.schemas.entity import (
     EntityImageUpdate,
     EntityPage,
     EntityRead,
+    EntityRef,
     EntitySummary,
     EntityUpdate,
     FogUpdate,
@@ -212,12 +213,23 @@ async def list_entities(
         .limit(page_size)
     )
 
-    return EntityPage(
-        items=[_summary(entity, context.is_dm) for entity in result.scalars()],
-        total=total,
-        page=page,
-        page_size=page_size,
+    rows = list(result.scalars())
+
+    # One query for the whole page rather than one per row: a list grouped by
+    # where things happen is the point of having a world, and asking per scene
+    # looks fine on a test campaign and falls over on a real one.
+    parents = await entity_service.parents_of(
+        session, [row.id for row in rows], is_dm=context.is_dm, user_id=context.user.id
     )
+
+    items = []
+    for entity in rows:
+        summary = _summary(entity, context.is_dm)
+        if (parent := parents.get(entity.id)) is not None:
+            summary = summary.model_copy(update={"parent": EntityRef.model_validate(parent)})
+        items.append(summary)
+
+    return EntityPage(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.post("/entities", response_model=EntityDetail, status_code=status.HTTP_201_CREATED)

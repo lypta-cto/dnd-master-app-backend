@@ -56,6 +56,10 @@ class EntitySummary(BaseModel):
     # Structured per-type fields (quest status, session number…) — small, and
     # lists need them to say anything useful about story state
     data: dict[str, Any] = Field(default_factory=dict)
+    # Where it sits, when a list has been asked to say. Filled only by the
+    # listing endpoint, which fetches every parent on the page in one query;
+    # everywhere else this stays null rather than costing a join nobody wanted.
+    parent: "EntityRef | None" = None
 
 
 class LinkedEntity(EntitySummary):
@@ -99,6 +103,16 @@ class FogMask(BaseModel):
 class FogUpdate(BaseModel):
     # Null clears it, which is how a map goes back to having no fog at all
     fog: FogMask | None = None
+
+
+class EntityRef(BaseModel):
+    """Just enough of an entity to name it and link to it."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    type: EntityType
 
 
 class SortOrder(StrEnum):

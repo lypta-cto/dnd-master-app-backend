@@ -573,3 +573,45 @@ async def test_a_hidden_region_drops_out_rather_than_hiding_what_is_under_it(
     # The DM still sees the whole chain
     theirs = await client.get(f"{PREFIX}/campaigns/{cid}/entities/{town['id']}", headers=dm)
     assert [a["name"] for a in theirs.json()["ancestors"]] == ["Skrivena zemlja"]
+
+
+async def test_a_listing_says_where_each_thing_sits(client: AsyncClient):
+    """So a list of scenes can be grouped without a request per scene."""
+    dm = await sign_up(client, "world-list@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    town = await make_entity(client, dm, cid, type="location", name="Vranov Brod")
+    placed = await make_entity(client, dm, cid, type="scene", name="Ispovest")
+    await make_entity(client, dm, cid, type="scene", name="Poternica")
+    await link(client, dm, cid, placed["id"], town["id"])
+
+    listed = await client.get(f"{PREFIX}/campaigns/{cid}/entities?type=scene", headers=dm)
+    by_name = {item["name"]: item for item in listed.json()["items"]}
+
+    assert by_name["Ispovest"]["parent"]["name"] == "Vranov Brod"
+    assert by_name["Ispovest"]["parent"]["type"] == "location"
+    # Unplaced is null rather than missing, so the UI has one thing to check
+    assert by_name["Poternica"]["parent"] is None
+
+
+async def test_a_player_is_not_told_a_thing_sits_in_a_secret_place(client: AsyncClient):
+    dm = await sign_up(client, "world-listsecret@example.com")
+    player = await sign_up(client, "world-listplayer@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    await client.post(
+        f"{PREFIX}/campaigns/{cid}/members",
+        json={"email": "world-listplayer@example.com", "role": "player"},
+        headers=dm,
+    )
+
+    lair = await make_entity(
+        client, dm, cid, type="location", name="Zmajeva jazbina", visibility="dm_only"
+    )
+    scene = await make_entity(
+        client, dm, cid, type="scene", name="Susret", visibility="shared"
+    )
+    await link(client, dm, cid, scene["id"], lair["id"])
+
+    listed = await client.get(f"{PREFIX}/campaigns/{cid}/entities?type=scene", headers=player)
+    assert listed.json()["items"][0]["parent"] is None

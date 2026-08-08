@@ -368,3 +368,34 @@ async def would_make_a_loop(
 
     seen = await ancestors(session, parent_id, is_dm=True)
     return any(entity.id == child_id for entity in seen)
+
+
+async def parents_of(
+    session: AsyncSession,
+    entity_ids: list[uuid.UUID],
+    *,
+    is_dm: bool,
+    user_id: uuid.UUID | None = None,
+) -> dict[uuid.UUID, Entity]:
+    """The immediate container of each of these, in one query.
+
+    For grouping a list by where things happen. Asking per row would be a
+    request per scene, which is the sort of thing that looks fine on a test
+    campaign and falls over on a real one.
+    """
+    if not entity_ids:
+        return {}
+
+    statement = (
+        select(EntityLink.from_id, Entity)
+        .join(Entity, Entity.id == EntityLink.to_id)
+        .where(
+            EntityLink.from_id.in_(entity_ids),
+            EntityLink.relation == LinkRelation.LOCATED_IN,
+        )
+    )
+
+    if (visible := visibility_filter(is_dm, user_id)) is not None:
+        statement = statement.where(visible)
+
+    return {row[0]: row[1] for row in (await session.execute(statement)).all()}
