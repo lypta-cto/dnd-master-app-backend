@@ -10,12 +10,19 @@ four fields and swapping providers should stay a one-file change. Nothing here
 is stored — the draft goes back to the client, and saving it is the DM's call.
 """
 
+from dataclasses import dataclass
+
 import httpx
 from fastapi import HTTPException, status
 
 from app.core.config import settings
 
 CHAT_URL = "https://api.openai.com/v1/chat/completions"
+
+# gpt-4o-mini, dollars per million tokens. Alongside the model they belong to,
+# so changing AI_TEXT_MODEL without these makes the ledger a confident lie.
+INPUT_RATE = 0.15
+OUTPUT_RATE = 0.60
 
 SYSTEM = """You write for a Dungeon Master preparing a session, and everything \
 you write has to be usable at a table tonight.
@@ -94,7 +101,15 @@ def build_prompt(kind: str, name: str, brief: str | None, context: str | None) -
     return "\n".join(parts)
 
 
-async def draft(kind: str, name: str, brief: str | None, context: str | None) -> str:
+@dataclass(frozen=True)
+class Drafted:
+    """The paragraph, and what it cost — every generation goes in the ledger."""
+
+    text: str
+    cents: float
+
+
+async def draft(kind: str, name: str, brief: str | None, context: str | None) -> Drafted:
     """One short draft. A paragraph, not a plan — a small model is the right size."""
     if not settings.OPENAI_API_KEY:
         raise HTTPException(
@@ -127,7 +142,8 @@ async def draft(kind: str, name: str, brief: str | None, context: str | None) ->
         detail = response.json().get("error", {}).get("message", "Drafting failed")
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
 
-    choices = response.json().get("choices") or []
+    body = response.json()
+    choices = body.get("choices") or []
     text = (choices[0].get("message", {}).get("content") or "").strip() if choices else ""
 
     if not text:
@@ -136,4 +152,11 @@ async def draft(kind: str, name: str, brief: str | None, context: str | None) ->
             detail="The model returned nothing usable.",
         )
 
-    return text
+    # The provider's own count, so the ledger records what was charged rather
+    # than what we guessed would be
+    usage = body.get("usage") or {}
+    cents = (
+        usage.get("prompt_tokens", 0) * INPUT_RATE + usage.get("completion_tokens", 0) * OUTPUT_RATE
+    ) / 10_000
+
+    return Drafted(text=text, cents=round(cents, 4))

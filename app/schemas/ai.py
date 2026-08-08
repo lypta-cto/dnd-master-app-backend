@@ -1,3 +1,5 @@
+import uuid
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -23,6 +25,33 @@ class DraftRequest(BaseModel):
 
 class DraftResponse(BaseModel):
     text: str
+    cents: float = 0
+
+
+class CoinEntryRead(BaseModel):
+    """One line of the purse. Negative coins are a generation, positive a top-up."""
+
+    id: uuid.UUID
+    entry_type: str
+    coins: float
+    detail: str
+    created_at: datetime
+
+
+class Purse(BaseModel):
+    balance: float
+    added: float
+    spent_on_text: float
+    spent_on_images: float
+    #: The same spending in real money, for when the fantasy unit isn't the point
+    spent_usd: float
+    coins_per_dollar: int
+    entries: list[CoinEntryRead] = Field(default_factory=list)
+
+
+class TopUpRequest(BaseModel):
+    # Bounded so a slipped decimal point doesn't record a fortune
+    usd: float = Field(gt=0, le=1000)
 
 
 class IllustrateRequest(BaseModel):

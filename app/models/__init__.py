@@ -3,6 +3,7 @@
 from app.models.base import Base
 from app.models.campaign import Campaign, CampaignMember, CampaignRole
 from app.models.cast import CastMode, CastState
+from app.models.coin import CoinEntry, CoinEntryType
 from app.models.combat import CombatState
 from app.models.entity import Entity, EntityLink, EntityType, LinkRelation, Visibility
 from app.models.entity_image import EntityImage
@@ -19,6 +20,8 @@ __all__ = [
     "CampaignRole",
     "CastMode",
     "CastState",
+    "CoinEntry",
+    "CoinEntryType",
     "CombatState",
     "Entity",
     "EntityImage",

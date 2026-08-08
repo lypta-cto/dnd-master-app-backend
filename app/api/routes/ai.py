@@ -5,18 +5,23 @@ from sqlalchemy import func, select
 
 from app.api.campaign_deps import DmCtx
 from app.api.deps import SessionDep
+from app.models.coin import CoinEntry, CoinEntryType
 from app.models.entity import Entity
 from app.models.entity_image import EntityImage
 from app.schemas.ai import (
     AiStatus,
+    CoinEntryRead,
     DraftRequest,
     DraftResponse,
     IllustratedImage,
     IllustrateRequest,
+    Purse,
+    TopUpRequest,
 )
 from app.schemas.entity import EntityImageRead
 from app.services import ai_image as image_service
 from app.services import ai_text as text_service
+from app.services import coins as coin_service
 
 router = APIRouter(prefix="/campaigns/{campaign_id}/ai", tags=["ai"])
 
@@ -27,6 +32,70 @@ router = APIRouter(prefix="/campaigns/{campaign_id}/ai", tags=["ai"])
 async def read_status(context: DmCtx) -> AiStatus:
     """So the UI can hide what isn't switched on rather than failing on click."""
     return AiStatus(text=text_service.configured(), images=image_service.configured())
+
+
+@router.get("/purse", response_model=Purse)
+async def read_purse(context: DmCtx, session: SessionDep) -> Purse:
+    """What this campaign has spent on generation, in coins.
+
+    Cents are a bad unit for a running total — an illustration is under one and
+    a draft is a fiftieth of one, so the number that matters never moves. Coins
+    are sized so the cheapest thing the app does still costs more than one.
+    """
+    totals = await coin_service.summary(session, context.campaign.id)
+
+    recent = (
+        (
+            await session.execute(
+                select(CoinEntry)
+                .where(CoinEntry.campaign_id == context.campaign.id)
+                .order_by(CoinEntry.created_at.desc())
+                .limit(20)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return Purse(
+        balance=coin_service.coins(totals["balance"]),
+        added=coin_service.coins(totals["added"]),
+        spent_on_text=coin_service.coins(totals["text"]),
+        spent_on_images=coin_service.coins(totals["image"]),
+        spent_usd=round((totals["text"] + totals["image"]) / 1_000_000, 4),
+        coins_per_dollar=coin_service.COINS_PER_DOLLAR,
+        entries=[
+            CoinEntryRead(
+                id=entry.id,
+                entry_type=entry.entry_type,
+                coins=coin_service.coins(entry.micros),
+                detail=entry.detail,
+                created_at=entry.created_at,
+            )
+            for entry in recent
+        ],
+    )
+
+
+@router.post("/purse/topup", response_model=Purse, status_code=status.HTTP_201_CREATED)
+async def top_up(payload: TopUpRequest, context: DmCtx, session: SessionDep) -> Purse:
+    """Record money put on the provider account, in dollars, as coins.
+
+    Nothing is charged here — the app can't take payment and doesn't pretend
+    to. This is the DM writing down what they already paid OpenAI, so the
+    balance means something to count down from.
+    """
+    await coin_service.record(
+        session,
+        campaign_id=context.campaign.id,
+        user_id=context.user.id,
+        entry_type=CoinEntryType.TOPUP,
+        micros=round(payload.usd * 1_000_000),
+        detail=f"Added ${payload.usd:.2f}",
+    )
+    await session.flush()
+
+    return await read_purse(context, session)
 
 
 def _campaign_context(context: DmCtx) -> str | None:
@@ -43,15 +112,27 @@ def _campaign_context(context: DmCtx) -> str | None:
 
 
 @router.post("/draft", response_model=DraftResponse)
-async def draft_description(payload: DraftRequest, context: DmCtx) -> DraftResponse:
-    """A first draft for the DM to rewrite. Nothing is saved here."""
-    text = await text_service.draft(
+async def draft_description(
+    payload: DraftRequest, context: DmCtx, session: SessionDep
+) -> DraftResponse:
+    """A first draft for the DM to rewrite. The prose isn't saved; the cost is."""
+    drafted = await text_service.draft(
         kind=payload.type,
         name=payload.name,
         brief=payload.brief,
         context=_campaign_context(context) if payload.use_campaign_context else None,
     )
-    return DraftResponse(text=text)
+
+    await coin_service.record(
+        session,
+        campaign_id=context.campaign.id,
+        user_id=context.user.id,
+        entry_type=CoinEntryType.TEXT,
+        micros=-coin_service.micros_from_cents(drafted.cents),
+        detail=f"Drafted {payload.name}",
+    )
+
+    return DraftResponse(text=drafted.text, cents=drafted.cents)
 
 
 @router.post(
@@ -108,6 +189,15 @@ async def illustrate_entity(
 
     if not entity.image_url:
         entity.image_url = url
+
+    await coin_service.record(
+        session,
+        campaign_id=context.campaign.id,
+        user_id=context.user.id,
+        entry_type=CoinEntryType.IMAGE,
+        micros=-coin_service.micros_from_cents(drawn.cents),
+        detail=f"Illustrated {entity.name} ({payload.quality})",
+    )
 
     await session.flush()
     await session.refresh(image)
