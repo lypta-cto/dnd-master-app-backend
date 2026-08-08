@@ -416,3 +416,77 @@ async def test_a_player_cannot_search_their_way_into_dm_only_entries(client: Asy
     found = await client.get(f"{PREFIX}/campaigns/{cid}/entities?q=strahd", headers=player)
     assert found.json()["items"] == []
     assert found.json()["total"] == 0
+
+
+# --- Fog of war ---------------------------------------------------------------
+
+
+async def test_painting_fog_leaves_the_rest_of_the_entity_alone(client: AsyncClient):
+    """The whole reason fog has its own route rather than going through PATCH."""
+    dm = await sign_up(client, "fog-dm@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    entity = await make_entity(
+        client, dm, cid, type="map", name="Vranov Brod", summary="Mapa sela",
+        data={"pins": [{"id": "a1", "x": 10, "y": 20, "label": "Crkva"}]},
+    )
+
+    painted = await client.put(
+        f"{PREFIX}/campaigns/{cid}/entities/{entity['id']}/fog",
+        json={"fog": {"w": 4, "h": 4, "mask": "AAA="}},
+        headers=dm,
+    )
+    assert painted.status_code == 200
+
+    body = painted.json()
+    assert body["data"]["fog"] == {"w": 4, "h": 4, "mask": "AAA="}
+    # The pins were never in the request and must still be there
+    assert body["data"]["pins"][0]["label"] == "Crkva"
+    assert body["summary"] == "Mapa sela"
+
+
+async def test_clearing_fog_removes_it_rather_than_blanking_it(client: AsyncClient):
+    dm = await sign_up(client, "fog-clear@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+    entity = await make_entity(client, dm, cid, type="map", name="Podrum")
+
+    await client.put(
+        f"{PREFIX}/campaigns/{cid}/entities/{entity['id']}/fog",
+        json={"fog": {"w": 4, "h": 4, "mask": "AAA="}},
+        headers=dm,
+    )
+    cleared = await client.put(
+        f"{PREFIX}/campaigns/{cid}/entities/{entity['id']}/fog",
+        json={"fog": None},
+        headers=dm,
+    )
+
+    # Absent, not empty: a map with no key has no fog, which is how a map goes
+    # back to being fully visible
+    assert "fog" not in cleared.json()["data"]
+
+
+async def test_only_the_dm_paints_fog(client: AsyncClient):
+    """Fog records what the party has been shown — handing them the eraser
+    would let a player uncover the map they are supposed to be exploring."""
+    dm = await sign_up(client, "fog-owner@example.com")
+    player = await sign_up(client, "fog-player@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    await client.post(
+        f"{PREFIX}/campaigns/{cid}/members",
+        json={"email": "fog-player@example.com", "role": "player"},
+        headers=dm,
+    )
+    entity = await make_entity(client, dm, cid, type="map", name="Selo", visibility="shared")
+
+    refused = await client.put(
+        f"{PREFIX}/campaigns/{cid}/entities/{entity['id']}/fog",
+        json={"fog": {"w": 4, "h": 4, "mask": "////"}},
+        headers=player,
+    )
+    assert refused.status_code == 403
+
+    # But they must be able to read it, or their own screen can't draw the fog
+    seen = await client.get(f"{PREFIX}/campaigns/{cid}/entities/{entity['id']}", headers=player)
+    assert seen.status_code == 200

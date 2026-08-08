@@ -79,6 +79,24 @@ class EntityDetail(EntityRead):
     unresolved_links: list[str] = Field(default_factory=list)
 
 
+class FogMask(BaseModel):
+    """What the party has uncovered, one bit per grid cell, base64'd.
+
+    The bound on `mask` is generous rather than exact: it only has to stop a
+    client from writing a novel into the entity's data, not to police a grid
+    whose dimensions the DM's map decides.
+    """
+
+    w: int = Field(ge=1, le=512)
+    h: int = Field(ge=1, le=512)
+    mask: str = Field(max_length=100_000)
+
+
+class FogUpdate(BaseModel):
+    # Null clears it, which is how a map goes back to having no fog at all
+    fog: FogMask | None = None
+
+
 class SortOrder(StrEnum):
     """How a list is ordered. A closed set so a typo can't silently sort by name."""
 

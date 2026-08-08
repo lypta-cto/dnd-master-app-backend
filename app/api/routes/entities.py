@@ -20,6 +20,7 @@ from app.schemas.entity import (
     EntityRead,
     EntitySummary,
     EntityUpdate,
+    FogUpdate,
     LinkCreate,
     LinkedEntity,
     SearchHit,
@@ -263,6 +264,49 @@ async def create_entity(
     _, unresolved = await entity_service.sync_wiki_links(session, entity)
 
     return await _detail(session, context, entity, unresolved)
+
+
+@router.put("/entities/{entity_id}/fog", response_model=EntityDetail)
+async def set_fog(
+    entity_id: uuid.UUID,
+    payload: FogUpdate,
+    context: DmCtx,
+    session: SessionDep,
+) -> EntityDetail:
+    """Uncovering a map is its own write, not a general entity update.
+
+    Painting fog sends the whole mask every time the DM lifts the brush, and
+    routing that through the entity PATCH would make each stroke a full write
+    of name, summary, body and every type field — so a stroke saved mid-session
+    would quietly overwrite whatever someone had just typed on another screen.
+    This touches one key and leaves the rest of `data` exactly as it was.
+
+    DM only: the fog is a record of what the party has been shown, so letting a
+    player write to it would be handing them the eraser.
+    """
+    entity = await session.get(Entity, entity_id)
+
+    if entity is None or entity.campaign_id != context.campaign.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    # A new dict, because SQLAlchemy tracks JSONB by identity — mutating the
+    # existing one in place is a change it never notices and never persists.
+    data = dict(entity.data)
+
+    if payload.fog is None:
+        data.pop("fog", None)
+    else:
+        data["fog"] = payload.fog.model_dump()
+
+    entity.data = data
+    await session.flush()
+
+    # `updated_at` carries an onupdate default, so the flush leaves it expired
+    # and serialising the row would try to fetch it from outside the async
+    # context. Refreshing here loads it where awaiting is still allowed.
+    await session.refresh(entity)
+
+    return await _detail(session, context, entity)
 
 
 @router.get("/entities/{entity_id}", response_model=EntityDetail)
