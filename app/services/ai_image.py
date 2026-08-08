@@ -30,8 +30,10 @@ QUALITIES: dict[str, str] = {"draft": "low", "good": "medium"}
 
 # Provider rates per million tokens, for showing the DM what a click cost.
 # Two numbers in one place beat a guess in the UI; if they move, they move here.
-IMAGE_TOKEN_RATE = 40.0
-TEXT_TOKEN_RATE = 5.0
+# These are the mini model's rates — change them with IMAGE_MODEL or the price
+# in the toast becomes a confident lie.
+IMAGE_TOKEN_RATE = 8.0
+TEXT_TOKEN_RATE = 2.0
 
 # What the picture is for, per type — a portrait and a map want different framing
 STYLES: dict[str, str] = {

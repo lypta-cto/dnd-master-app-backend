@@ -101,7 +101,14 @@ class Settings(BaseSettings):
     # cheap models are the right size.
     OPENAI_API_KEY: str | None = None
     AI_TEXT_MODEL: str = "gpt-4o-mini"
-    IMAGE_MODEL: str = "gpt-image-1"
+
+    # The mini model bills its output at a fifth of the full one for the same
+    # token counts, and the pictures came back better rather than worse — the
+    # cheap tier costs 0.24¢ against 1.15¢, and its *medium* tier undercuts
+    # what the full model charged for *low*. Compared on one prompt at both
+    # tiers before switching. It is also cheaper per image than the open-weight
+    # models hosted elsewhere, which is the reason not to add a second provider.
+    IMAGE_MODEL: str = "gpt-image-1-mini"
     IMAGE_SIZE: str = "1024x1024"
     IMAGE_QUALITY: str = "low"
 
