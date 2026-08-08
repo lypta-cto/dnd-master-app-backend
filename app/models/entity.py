@@ -111,10 +111,13 @@ class Entity(UUIDMixin, TimestampMixin, Base):
     # ranks the keep itself over every note that mentions it.
     search_vector: Mapped[str] = mapped_column(
         TSVECTOR,
+        # `immutable_unaccent` is ours — a generated column demands IMMUTABLE
+        # and unaccent is only STABLE. See the migration for why pinning the
+        # dictionary makes it honest rather than a lie about determinism.
         Computed(
-            "setweight(to_tsvector('simple', coalesce(name, '')), 'A') || "
-            "setweight(to_tsvector('simple', coalesce(summary, '')), 'B') || "
-            "setweight(to_tsvector('simple', coalesce(body, '')), 'C')",
+            "setweight(to_tsvector('simple', immutable_unaccent(coalesce(name, ''))), 'A') || "
+            "setweight(to_tsvector('simple', immutable_unaccent(coalesce(summary, ''))), 'B') || "
+            "setweight(to_tsvector('simple', immutable_unaccent(coalesce(body, ''))), 'C')",
             persisted=True,
         ),
         nullable=False,

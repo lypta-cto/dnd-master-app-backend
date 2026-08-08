@@ -243,8 +243,24 @@ async def search(
     """
     Full-text over the whole campaign in one query — the payoff for putting
     everything on one spine instead of a table per type.
+
+    Every term matches as a prefix, because this runs while the DM is still
+    typing. `websearch_to_tsquery` matches whole words, so "Barov" found
+    nothing at all and the box looked broken right up until the last letter.
+
+    The query is assembled from words we extracted ourselves rather than
+    handed to `to_tsquery` raw: that function throws on syntax it dislikes, and
+    a stray quote in a search box must not become a 500.
     """
-    tsquery = func.websearch_to_tsquery("simple", query)
+    terms = re.findall(r"\w+", query, re.UNICODE)
+
+    if not terms:
+        return []
+
+    # Folded to match the column, which is stored unaccented — so "kovac"
+    # finds "Kovač" here exactly as it does in a filtered list.
+    prefixed = " & ".join(f"{term}:*" for term in terms)
+    tsquery = func.to_tsquery("simple", func.immutable_unaccent(prefixed))
     rank = func.ts_rank(Entity.search_vector, tsquery)
 
     statement = (

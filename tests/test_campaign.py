@@ -615,3 +615,36 @@ async def test_a_player_is_not_told_a_thing_sits_in_a_secret_place(client: Async
 
     listed = await client.get(f"{PREFIX}/campaigns/{cid}/entities?type=scene", headers=player)
     assert listed.json()["items"][0]["parent"] is None
+
+
+async def test_search_matches_prefixes_and_ignores_diacritics(client: AsyncClient):
+    """It runs while the DM is still typing, so whole-word matching is useless."""
+    dm = await sign_up(client, "search-prefix@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    await make_entity(client, dm, cid, type="location", name="Barovija")
+    await make_entity(client, dm, cid, type="npc", name="Miloš Kovač")
+
+    async def find(q: str):
+        response = await client.get(
+            f"{PREFIX}/campaigns/{cid}/search", params={"q": q}, headers=dm
+        )
+        return {hit["name"] for hit in response.json()}
+
+    assert await find("Barov") == {"Barovija"}       # half a word
+    assert await find("kovac") == {"Miloš Kovač"}    # no diacritics
+    assert await find("Kovač") == {"Miloš Kovač"}    # with them
+    assert await find("milos kov") == {"Miloš Kovač"}  # both terms, both partial
+
+
+async def test_punctuation_in_the_search_box_is_not_a_server_error(client: AsyncClient):
+    """to_tsquery throws on syntax it dislikes; a stray quote must not be a 500."""
+    dm = await sign_up(client, "search-junk@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+    await make_entity(client, dm, cid, name="Goblin King")
+
+    for junk in ["'", "!&|", "(", "a & !b", "  "]:
+        response = await client.get(
+            f"{PREFIX}/campaigns/{cid}/search", params={"q": junk}, headers=dm
+        )
+        assert response.status_code == 200, f"{junk!r} broke it"

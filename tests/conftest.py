@@ -68,6 +68,14 @@ async def engine():
         # has to be installed here too, or the suite passes on a database the
         # application would fail against.
         await connection.execute(text("CREATE EXTENSION IF NOT EXISTS unaccent"))
+        # The search column is generated from this, so the schema can't be
+        # created without it. Same reason as the extension above: migrations
+        # install it, and this database never runs them.
+        await connection.execute(text("""
+            CREATE OR REPLACE FUNCTION immutable_unaccent(text) RETURNS text
+            LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT AS
+            $$ SELECT public.unaccent('public.unaccent'::regdictionary, $1) $$
+        """))
         await connection.run_sync(Base.metadata.drop_all)
         await connection.run_sync(Base.metadata.create_all)
 
