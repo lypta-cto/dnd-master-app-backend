@@ -648,3 +648,68 @@ async def test_punctuation_in_the_search_box_is_not_a_server_error(client: Async
             f"{PREFIX}/campaigns/{cid}/search", params={"q": junk}, headers=dm
         )
         assert response.status_code == 200, f"{junk!r} broke it"
+
+
+async def test_a_bestiary_arrives_in_one_request_and_twice_is_not_double(client: AsyncClient):
+    dm = await sign_up(client, "bulk-dm@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    monsters = {
+        "entities": [
+            {"type": "monster", "name": "Aboleth", "data": {"cr": "10", "hp": 135}},
+            {"type": "monster", "name": "Aarakocra", "data": {"cr": "1/4", "hp": 13}},
+        ]
+    }
+
+    first = await client.post(f"{PREFIX}/campaigns/{cid}/entities/bulk", json=monsters, headers=dm)
+    assert first.status_code == 201
+    assert first.json() == {"created": 2, "skipped": 0}
+
+    # The same file imported again adds nothing
+    second = await client.post(f"{PREFIX}/campaigns/{cid}/entities/bulk", json=monsters, headers=dm)
+    assert second.json() == {"created": 0, "skipped": 2}
+
+    listed = await client.get(
+        f"{PREFIX}/campaigns/{cid}/entities", params={"type": "monster"}, headers=dm
+    )
+    assert listed.json()["total"] == 2
+
+    # A player may not flood the campaign
+    player = await sign_up(client, "bulk-player@example.com")
+    seat = (
+        await client.post(
+            f"{PREFIX}/campaigns/{cid}/players", json={"name": "Ana"}, headers=dm
+        )
+    ).json()
+    await client.post(
+        f"{PREFIX}/campaigns/{cid}/players/{seat['id']}/invite",
+        json={"email": "bulk-player@example.com"},
+        headers=dm,
+    )
+    forbidden = await client.post(
+        f"{PREFIX}/campaigns/{cid}/entities/bulk", json=monsters, headers=player
+    )
+    assert forbidden.status_code == 403
+
+
+async def test_the_starred_working_set_can_be_asked_for_alone(client: AsyncClient):
+    dm = await sign_up(client, "star-dm@example.com")
+    cid = (await make_campaign(client, dm))["id"]
+
+    await client.post(
+        f"{PREFIX}/campaigns/{cid}/entities",
+        json={"type": "monster", "name": "Owlbear", "data": {"favorite": True}},
+        headers=dm,
+    )
+    await client.post(
+        f"{PREFIX}/campaigns/{cid}/entities",
+        json={"type": "monster", "name": "Zombie", "data": {}},
+        headers=dm,
+    )
+
+    starred = await client.get(
+        f"{PREFIX}/campaigns/{cid}/entities",
+        params={"type": "monster", "favorite": "true"},
+        headers=dm,
+    )
+    assert [e["name"] for e in starred.json()["items"]] == ["Owlbear"]

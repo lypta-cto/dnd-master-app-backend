@@ -26,6 +26,25 @@ class EntityCreate(EntityBase):
     player_id: uuid.UUID | None = None
 
 
+class EntityBulkItem(EntityBase):
+    type: EntityType
+
+
+class EntityBulkCreate(BaseModel):
+    """A whole bestiary in one request — 800 monsters as 800 POSTs would be
+    a coffee break, and the client would give up long before the server."""
+
+    entities: list[EntityBulkItem] = Field(min_length=1, max_length=1000)
+    # Same name already in the campaign? Skip it, so importing the same file
+    # twice doesn't double the bestiary.
+    skip_existing: bool = True
+
+
+class EntityBulkResult(BaseModel):
+    created: int
+    skipped: int
+
+
 class EntityUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     summary: str | None = Field(default=None, max_length=500)

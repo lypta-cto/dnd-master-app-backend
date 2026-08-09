@@ -12,6 +12,8 @@ from app.models.player import Player
 from app.schemas.auth import MessageResponse
 from app.schemas.entity import (
     CampaignImage,
+    EntityBulkCreate,
+    EntityBulkResult,
     EntityCreate,
     EntityDetail,
     EntityImageRead,
@@ -162,6 +164,7 @@ async def list_entities(
     type: EntityType | None = None,
     tag: str | None = None,
     q: str | None = Query(default=None, max_length=200),
+    favorite: bool | None = None,
     sort: SortOrder = SortOrder.NAME,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
@@ -172,6 +175,10 @@ async def list_entities(
         filters.append(Entity.type == type)
     if tag:
         filters.append(Entity.tags.any(tag))
+    if favorite:
+        # The starred working set out of an imported pile of hundreds —
+        # a data flag rather than a column, like everything type-specific
+        filters.append(Entity.data["favorite"].as_boolean().is_(True))
     if (needle := (q or "").strip()):
         # Filtering, not ranked search — /search already does that across the
         # campaign. Here the DM is looking down one list for a name they half
@@ -281,6 +288,64 @@ async def create_entity(
     _, unresolved = await entity_service.sync_wiki_links(session, entity)
 
     return await _detail(session, context, entity, unresolved)
+
+
+@router.post(
+    "/entities/bulk", response_model=EntityBulkResult, status_code=status.HTTP_201_CREATED
+)
+async def create_entities_bulk(
+    payload: EntityBulkCreate, context: DmCtx, session: SessionDep
+) -> EntityBulkResult:
+    """A bestiary import, in one round trip.
+
+    Slugs are resolved against one upfront read of the campaign's slugs rather
+    than a query per row — the per-entity path would ask the database eight
+    hundred questions it can answer once. Wiki-link syncing is skipped on
+    purpose: imported statblocks don't carry [[links]], and parsing 800 bodies
+    to find that out would be the slowest no-op in the app.
+    """
+    taken = set(
+        (
+            await session.execute(
+                select(Entity.slug).where(Entity.campaign_id == context.campaign.id)
+            )
+        ).scalars()
+    )
+
+    created = 0
+    skipped = 0
+
+    for item in payload.entities:
+        base = entity_service.slugify(item.name)
+
+        if payload.skip_existing and base in taken:
+            skipped += 1
+            continue
+
+        slug = base
+        suffix = 2
+        while slug in taken:
+            slug = f"{base}-{suffix}"
+            suffix += 1
+        taken.add(slug)
+
+        session.add(
+            Entity(
+                campaign_id=context.campaign.id,
+                type=item.type,
+                name=item.name,
+                slug=slug,
+                summary=item.summary,
+                body=item.body,
+                tags=item.tags,
+                data=item.data,
+                visibility=item.visibility,
+            )
+        )
+        created += 1
+
+    await session.flush()
+    return EntityBulkResult(created=created, skipped=skipped)
 
 
 @router.put("/entities/{entity_id}/fog", response_model=EntityDetail)
