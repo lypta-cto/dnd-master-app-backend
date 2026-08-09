@@ -227,7 +227,12 @@ async def test_the_initiative_strip_survives_a_cast(client: AsyncClient):
         json={
             "round": 2,
             "entries": [
-                {"name": "Varvarin", "kind": "character", "active": True},
+                {
+                    "name": "Varvarin",
+                    "kind": "character",
+                    "active": True,
+                    "image_url": "/media/varvarin.png",
+                },
                 {"name": "Goblin", "kind": "monster", "down": True},
             ],
         },
@@ -246,6 +251,8 @@ async def test_the_initiative_strip_survives_a_cast(client: AsyncClient):
     after = (await client.get(f"{PREFIX}/campaigns/{cid}/cast", headers=dm)).json()
     assert after["mode"] == "text"
     assert [e["name"] for e in after["initiative"]["entries"]] == ["Varvarin", "Goblin"]
+    # The face travels with the name, so the wall can show who is up
+    assert after["initiative"]["entries"][0]["image_url"] == "/media/varvarin.png"
 
     # Empty takes it down without touching what's underneath
     await client.put(

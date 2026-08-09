@@ -52,6 +52,9 @@ class InitiativeEntry(BaseModel):
     kind: str = Field(default="custom", max_length=20)
     down: bool = False
     active: bool = False
+    # A face is fine for the table to see — it's the picture the party is
+    # already looking at on the board
+    image_url: str | None = Field(default=None, max_length=500)
 
 
 class InitiativeUpdate(BaseModel):
