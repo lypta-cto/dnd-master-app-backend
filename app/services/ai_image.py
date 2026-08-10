@@ -70,24 +70,48 @@ def configured() -> bool:
 
 
 def build_prompt(kind: str, name: str, description: str, extra: str | None) -> str:
-    """The DM's own words first; style and medium after."""
+    """The DM's own words first; style and medium after.
+
+    Except for maps, where that order is exactly wrong. A location's
+    description is usually a story — the goblin selling soap on the square,
+    children by the river — and with the story first the model drew the
+    story: a cartoon scene full of little goblins instead of an aerial view.
+    For maps the cartographic frame leads, the description is introduced as
+    "the place", and people are banned outright: a map shows where the square
+    is, not who is standing on it.
+    """
+    if kind == "map":
+        parts = [
+            "A hand-drawn fantasy map viewed directly from above, straight "
+            "down like a bird's-eye survey of the terrain"
+        ]
+        parts.append(f"The place being mapped: {name}. {description.strip()}".strip(". "))
+        if extra:
+            parts.append(extra.strip())
+        parts.append(
+            "Draw only the geography and the architecture seen from above: "
+            "rooftops of buildings, streets and paths, fields, rivers and "
+            "water, walls, and the notable landmarks the description names, "
+            "each picked out as a small map illustration"
+        )
+        parts.append(
+            "Absolutely no people, no creatures, no figures, no scenes of "
+            "daily life — this is a map of the place, not a picture of what "
+            "happens in it"
+        )
+        parts.append(
+            "Richly coloured hand-drawn cartography, evenly lit and crisp "
+            "edge to edge, parchment texture welcome. No grid lines, no "
+            "text, no lettering, no numbers, no watermark."
+        )
+        return ". ".join(parts)
+
     parts = [f"{name}. {description.strip()}"] if description.strip() else [name]
 
     if extra:
         parts.append(extra.strip())
 
     parts.append(STYLES.get(kind, DEFAULT_STYLE))
-
-    # A map is not a scene: there is no "subject" to focus and no background
-    # to soften — depth-of-field on a village map blurs half the village. It
-    # gets a cartographic finish instead of the painterly-scene one.
-    if kind == "map":
-        parts.append(
-            "Richly coloured hand-drawn fantasy cartography, evenly lit and "
-            "crisp edge to edge, parchment texture welcome. "
-            "No text, no lettering, no numbers, no watermark."
-        )
-        return ". ".join(parts)
 
     # Two halves doing two jobs, both learned the hard way. The painterly half
     # is the look — asking for "digital illustration, balanced lighting" got

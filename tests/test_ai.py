@@ -231,7 +231,11 @@ async def test_a_map_prompt_is_cartography_not_a_scene(client: AsyncClient):
     )
 
     assert "cartography" in prompt
-    assert "no grid lines" in prompt
-    assert "No text" in prompt
+    assert "No grid lines" in prompt
+    assert "no lettering" in prompt
+    # The frame leads and the story follows — description-first drew the
+    # goblin selling soap instead of the village he sells it in
+    assert prompt.startswith("A hand-drawn fantasy map viewed directly from above")
+    assert "no people, no creatures, no figures" in prompt
     # The painterly-scene half must not leak in
     assert "silhouette" not in prompt
