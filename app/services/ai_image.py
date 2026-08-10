@@ -35,14 +35,26 @@ QUALITIES: dict[str, str] = {"draft": "low", "good": "medium"}
 IMAGE_TOKEN_RATE = 8.0
 TEXT_TOKEN_RATE = 2.0
 
-# What the picture is for, per type — a portrait and a map want different framing
+# What the picture is for, per type — a portrait and a map want different
+# framing. Every subject stands in a scene: the blank-backdrop versions came
+# out looking like catalogue photography, and a world is the one thing a
+# fantasy picture is for.
 STYLES: dict[str, str] = {
-    "npc": "character portrait, head and shoulders, neutral background",
-    "character": "character portrait, head and shoulders, neutral background",
-    "monster": "creature illustration, full body, plain background",
+    "npc": (
+        "character portrait from the chest up, caught mid-thought in the place "
+        "they belong — their room, street or wilderness alive behind them"
+    ),
+    "character": (
+        "heroic character portrait from the chest up, in the place they belong, "
+        "their world alive behind them"
+    ),
+    "monster": (
+        "full-body creature in its own habitat, dynamic pose, dramatic low "
+        "camera angle, the environment telling where it hunts"
+    ),
     "location": "wide establishing shot of the place, no people in the foreground",
     "scene": "wide establishing shot, cinematic framing",
-    "item": "single object study on a plain background",
+    "item": "single object study, moody light, a hint of the place it was found",
     "map": "top-down map illustration, clear landmarks, no text labels",
 }
 
@@ -61,14 +73,22 @@ def build_prompt(kind: str, name: str, description: str, extra: str | None) -> s
         parts.append(extra.strip())
 
     parts.append(STYLES.get(kind, DEFAULT_STYLE))
-    # This line does more for sharpness than paying for a better rendering pass.
-    # The old one asked for "dramatic lighting, muted palette" and got exactly
-    # that: soft, dark, mushy. Asking for crisp focus and readable shapes made
-    # the cheap tier usable — compared side by side at both price points.
+    # Two halves doing two jobs, both learned the hard way. The painterly half
+    # is the look — asking for "digital illustration, balanced lighting" got
+    # technically fine pictures of creatures floating on beige, like catalogue
+    # photography. The sharpness half is the guard: an earlier prompt that led
+    # with mood ("dramatic lighting, muted palette") came out soft and murky at
+    # every price point, so the subject keeps its "crisp focus" and the paint
+    # and atmosphere are pushed to the background layer, where blur is depth
+    # rather than mush.
     parts.append(
-        "Digital fantasy illustration, crisp focus, clean readable shapes, "
-        "clear separation between foreground and background, balanced lighting "
-        "so detail stays visible. No text, no lettering, no watermark, no blur."
+        "Painterly high-fantasy concept art with confident visible brushwork, "
+        "rich colour, dramatic natural light — golden hour, torchlight or "
+        "storm-light — and real atmosphere and depth. The subject itself in "
+        "crisp focus with clean readable shapes and a strong silhouette; the "
+        "painted world behind it softer, so the scene has depth. In the "
+        "tradition of classic tabletop rulebook art. "
+        "No text, no lettering, no watermark."
     )
 
     return ". ".join(parts)
