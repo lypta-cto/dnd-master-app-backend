@@ -197,7 +197,7 @@ async def illustrate_entity(
         )
 
     prompt = image_service.build_prompt(
-        kind=entity.type.value,
+        kind="map" if payload.as_map else entity.type.value,
         name=entity.name,
         description=description[:2000],
         extra=payload.extra,

@@ -55,7 +55,11 @@ STYLES: dict[str, str] = {
     "location": "wide establishing shot of the place, no people in the foreground",
     "scene": "wide establishing shot, cinematic framing",
     "item": "single object study, moody light, a hint of the place it was found",
-    "map": "top-down map illustration, clear landmarks, no text labels",
+    "map": (
+        "hand-painted top-down fantasy map of the place, its notable "
+        "landmarks drawn clearly and picked out by little illustrations, "
+        "no grid lines, no text labels, no compass rose text"
+    ),
 }
 
 DEFAULT_STYLE = "illustration for a tabletop roleplaying game"
@@ -73,6 +77,18 @@ def build_prompt(kind: str, name: str, description: str, extra: str | None) -> s
         parts.append(extra.strip())
 
     parts.append(STYLES.get(kind, DEFAULT_STYLE))
+
+    # A map is not a scene: there is no "subject" to focus and no background
+    # to soften — depth-of-field on a village map blurs half the village. It
+    # gets a cartographic finish instead of the painterly-scene one.
+    if kind == "map":
+        parts.append(
+            "Richly coloured hand-drawn fantasy cartography, evenly lit and "
+            "crisp edge to edge, parchment texture welcome. "
+            "No text, no lettering, no numbers, no watermark."
+        )
+        return ". ".join(parts)
+
     # Two halves doing two jobs, both learned the hard way. The painterly half
     # is the look — asking for "digital illustration, balanced lighting" got
     # technically fine pictures of creatures floating on beige, like catalogue

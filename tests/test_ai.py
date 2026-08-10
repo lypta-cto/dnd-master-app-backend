@@ -216,3 +216,22 @@ async def test_the_dms_private_notes_never_reach_the_model(client: AsyncClient):
     assert "Kobold" in written
     assert "poisons" not in written
     assert "harmless" not in written
+
+
+async def test_a_map_prompt_is_cartography_not_a_scene(client: AsyncClient):
+    """Depth-of-field on a village map blurs half the village — maps get an
+    evenly-lit cartographic finish, and never any lettering."""
+    from app.services import ai_image
+
+    prompt = ai_image.build_prompt(
+        kind="map",
+        name="Selo Podgorje",
+        description="Selo na obali reke, sa mlinom i starim hrastom.",
+        extra=None,
+    )
+
+    assert "cartography" in prompt
+    assert "no grid lines" in prompt
+    assert "No text" in prompt
+    # The painterly-scene half must not leak in
+    assert "silhouette" not in prompt

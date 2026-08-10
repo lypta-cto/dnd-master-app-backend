@@ -76,6 +76,10 @@ class IllustrateRequest(BaseModel):
     # Cheap by default: a draft is good enough for most things on the page, and
     # the DM asks for the expensive one when the picture is worth it.
     quality: Literal["draft", "good"] = "draft"
+    # Draw the place as a map rather than a scene: top-down, landmarks, no
+    # grid, no lettering. The entity is still the same location — this only
+    # changes what kind of picture is asked for.
+    as_map: bool = False
 
 
 class IllustratedImage(EntityImageRead):
