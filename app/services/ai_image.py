@@ -81,13 +81,19 @@ def build_prompt(kind: str, name: str, description: str, extra: str | None) -> s
     # every price point, so the subject keeps its "crisp focus" and the paint
     # and atmosphere are pushed to the background layer, where blur is depth
     # rather than mush.
+    # The first painterly draft of this prompt named its lighting ("golden
+    # hour, torchlight") and invoked "classic rulebook art" — old varnished
+    # paintings — and every image came back the same amber-brown regardless of
+    # subject. The palette now follows the subject and nothing else names a
+    # colour, with the sepia wash banned by name.
     parts.append(
         "Painterly high-fantasy concept art with confident visible brushwork, "
-        "rich colour, dramatic natural light — golden hour, torchlight or "
-        "storm-light — and real atmosphere and depth. The subject itself in "
-        "crisp focus with clean readable shapes and a strong silhouette; the "
-        "painted world behind it softer, so the scene has depth. In the "
-        "tradition of classic tabletop rulebook art. "
+        "dramatic natural light that suits the scene, real atmosphere and "
+        "depth. A full varied colour palette that follows the subject — cool "
+        "blues and greens as readily as warm tones; never a monochrome sepia "
+        "or amber wash over everything. The subject itself in crisp focus "
+        "with clean readable shapes and a strong silhouette; the painted "
+        "world behind it softer, so the scene has depth. "
         "No text, no lettering, no watermark."
     )
 
