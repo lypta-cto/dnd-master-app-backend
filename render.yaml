@@ -24,7 +24,9 @@ services:
     # Runs after the build and before the new instance takes traffic, so the
     # schema is never behind the code that expects it. This is also what
     # installs the unaccent extension the list search depends on.
-    preDeployCommand: alembic upgrade head
+    # Migrations happen in the container's own CMD instead of here — the
+    # hobby tiers silently skip preDeployCommand, and a setting that runs
+    # only on paid plans is a trap disguised as a config line.
 
     # Uploaded and AI-generated images. Without this they live on the container
     # filesystem and every deploy silently deletes them — including pictures

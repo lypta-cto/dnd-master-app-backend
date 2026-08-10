@@ -42,4 +42,8 @@ ENTRYPOINT ["/code/entrypoint.sh"]
 # fails the deploy if it can't find a bound port, and its default is 10000, not
 # 8000. One worker on purpose: the cast channel's subscriber list lives in
 # process memory, so a second worker would leave half the displays unnotified.
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Migrations run at boot, not pre-deploy: Render's free/starter hobby tiers
+# skip preDeployCommand, which left production four migrations behind before
+# anyone noticed. Upgrade is idempotent and this is a single instance, so
+# boot-time is the one place it reliably happens.
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
